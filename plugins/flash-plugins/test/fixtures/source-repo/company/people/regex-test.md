@@ -4,7 +4,6 @@ name: Regex Test
 role: Engineer
 team: engineering
 squad: [growth-squad]
-email: first.last+test@flash.test
 updated: 2026-04-28
 ---
 

@@ -4,7 +4,6 @@ name: Layla Test
 role: Senior Designer
 team: design
 squad: [financial-wellness-squad]
-email: layla@flash.test
 updated: 2026-04-28
 ---
 

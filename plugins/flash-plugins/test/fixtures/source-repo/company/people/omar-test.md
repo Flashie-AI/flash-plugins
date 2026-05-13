@@ -3,8 +3,7 @@ type: person
 name: Omar Test
 role: PM
 team: product
-squad: [bill-payments-squad]
-email: omar@flash.test
+squad: [bill-payments-squad, growth-squad]
 updated: 2026-04-28
 ---
 
