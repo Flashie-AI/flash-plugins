@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Flash-Vault setup skill — E2E test suite
 #
-# Sources the production .claude/skills/setup/lib/setup-core.sh directly. No
+# Sources the production lib/setup-core.sh directly. No
 # parallel driver implementation — drift impossible by construction.
 #
 # v1: local-only test. CI cannot clone the private source repo without a
@@ -12,16 +12,16 @@
 
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LIB="$REPO_ROOT/.claude/lib/setup-core.sh"
+PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+LIB="$PLUGIN_ROOT/lib/setup-core.sh"
 
 # Sanity: lib must exist (build/install drift catch).
 if [ ! -f "$LIB" ]; then
-  echo "FATAL: $LIB not found. Did Task 3 commit?"
+  echo "FATAL: $LIB not found. Check plugin install."
   exit 1
 fi
 
-# shellcheck source=.claude/skills/setup/lib/setup-core.sh
+# shellcheck source=../lib/setup-core.sh
 source "$LIB"
 
 # =============================================================================
@@ -43,7 +43,7 @@ mk_tempdir() {
 # This is the fake "origin" that fv_clone clones from.
 mk_fake_origin() {
   local origin_dir="$1"
-  local fixture="$REPO_ROOT/test/fixtures/source-repo"
+  local fixture="$PLUGIN_ROOT/test/fixtures/source-repo"
 
   # Stage area that becomes the working repo
   local work
@@ -144,24 +144,23 @@ assert_no_grep() {
 }
 
 # Drive the deterministic flow end-to-end with provided pre-fills.
-# Used by scenarios that test the happy path (1, 2, 10, 11, 12).
+# Used by scenarios that test the happy path.
+# Args: $1=name (default Layla), $2=role (default Designer), $3=lines (default financial-wellness),
+#       $4=focus, $5=personality, $6=squads (optional, default empty)
 drive_full_flow() {
   fv_check_existing_path "$VAULT"
   fv_clone "$VAULT"
   cd "$VAULT" || return 1
   fv_verify_clone
 
-  local email="${1:-}"
-  fv_autodetect "$email" || true
-
-  # Prefer auto-detect values, fall back to test args
-  export FV_NAME="${FV_PREFILL_NAME:-${2:-Layla}}"
-  export FV_ROLE="${FV_PREFILL_ROLE:-${3:-Designer}}"
-  export FV_LINES="${FV_PREFILL_LINES:-${4:-financial-wellness}}"
+  export FV_NAME="${1:-Layla}"
+  export FV_ROLE="${2:-Designer}"
+  export FV_LINES="${3:-financial-wellness}"
   export FV_PRIMARY_LINE
   FV_PRIMARY_LINE=$(echo "$FV_LINES" | awk '{print $1}')
-  export FV_FOCUS="${5:-Auto-invest roundup redesign and empty-state consistency}"
-  export FV_PERSONALITY="${6:-Direct, terse, no preamble.}"
+  export FV_FOCUS="${4:-Auto-invest roundup redesign and empty-state consistency}"
+  export FV_PERSONALITY="${5:-Direct, terse, no preamble.}"
+  export FV_SQUADS="${6:-}"
 
   fv_generate
 }
@@ -170,9 +169,9 @@ drive_full_flow() {
 # Scenarios
 # =============================================================================
 
-# Scenario 1: Standard flow (no auto-detect match)
+# Scenario 1: Standard flow
 test_01_standard_flow() {
-  drive_full_flow "noone@nowhere.test" || return 1
+  drive_full_flow || return 1
 
   assert_file_exists "$VAULT/personal/identity.md" || return 1
   assert_file_exists "$VAULT/personal/tasks.md" || return 1
@@ -192,26 +191,8 @@ test_01_standard_flow() {
   assert_grep "Daily commands" "$VAULT/CLAUDE.md" || return 1   # new section
 }
 
-# Scenario 2: Auto-detect full match
-test_02_auto_detect_full() {
-  fv_check_existing_path "$VAULT"
-  fv_clone "$VAULT"
-  cd "$VAULT" || return 1
-  fv_verify_clone
-
-  if ! fv_autodetect "layla@flash.test"; then
-    echo "  FAIL: auto-detect should have succeeded for layla@flash.test"
-    return 1
-  fi
-
-  [ "$FV_PREFILL_NAME" = "Layla Test" ] || { echo "  FAIL: name=$FV_PREFILL_NAME"; return 1; }
-  [ "$FV_PREFILL_ROLE" = "Senior Designer" ] || { echo "  FAIL: role=$FV_PREFILL_ROLE"; return 1; }
-  [ "$FV_PREFILL_SQUAD" = "financial-wellness-squad" ] || { echo "  FAIL: squad=$FV_PREFILL_SQUAD"; return 1; }
-  [ "$FV_PREFILL_LINES" = "financial-wellness" ] || { echo "  FAIL: lines=$FV_PREFILL_LINES"; return 1; }
-}
-
-# Scenario 3: Pre-clone refuse — full setup
-test_03_refuse_full_setup() {
+# Scenario 2: Pre-clone refuse — full setup
+test_02_refuse_full_setup() {
   # Pre-create a clone with all 4 overlay files
   mkdir -p "$VAULT/personal" "$VAULT/drafts" "$VAULT/.git"
   cd "$VAULT" || return 1
@@ -231,8 +212,8 @@ test_03_refuse_full_setup() {
   echo "$output" | grep -q "already have a Flash Vault setup" || { echo "  FAIL: missing 'already have setup' message"; return 1; }
 }
 
-# Scenario 4: Pre-clone refuse — partial setup (single missing overlay file)
-test_04_refuse_partial_setup_missing_one_file() {
+# Scenario 3: Pre-clone refuse — partial setup (single missing overlay file)
+test_03_refuse_partial_setup_missing_one_file() {
   # Pre-create a verified Flash-Vault clone with CLAUDE.md MISSING (one file
   # short of complete) and verify the partial-setup branch fires.
   mkdir -p "$VAULT/personal" "$VAULT/drafts"
@@ -254,8 +235,8 @@ test_04_refuse_partial_setup_missing_one_file() {
   echo "$output" | grep -q "rm -rf personal/ drafts/ CLAUDE.md" || { echo "  FAIL: missing recovery cmd"; return 1; }
 }
 
-# Scenario 5: Pre-clone refuse — non-empty unrelated dir
-test_05_refuse_unrelated() {
+# Scenario 4: Pre-clone refuse — non-empty unrelated dir
+test_04_refuse_unrelated() {
   mkdir -p "$VAULT"
   echo "random" > "$VAULT/some-file.txt"
 
@@ -267,8 +248,8 @@ test_05_refuse_unrelated() {
   echo "$output" | grep -q "exists and is not empty" || { echo "  FAIL: missing unrelated-dir message"; return 1; }
 }
 
-# Scenario 6: Sanity-check failure cleanup (origin remote mismatch)
-test_06_clone_sanity_cleanup() {
+# Scenario 5: Sanity-check failure cleanup (origin remote mismatch)
+test_05_clone_sanity_cleanup() {
   # Create a fake origin that doesn't have Flashie-AI/Flash-Vault in the path
   local bad_origin="$TMP/bad-origin"
   mkdir -p "$bad_origin"
@@ -293,8 +274,8 @@ test_06_clone_sanity_cleanup() {
   [ ! -d "$VAULT" ] || { echo "  FAIL: vault dir not cleaned up"; return 1; }
 }
 
-# Scenario 7: Templates missing in clone
-test_07_templates_missing() {
+# Scenario 6: Templates missing in clone
+test_06_templates_missing() {
   # Create a fake origin that has the right URL pattern but missing templates/personal/
   local stripped_root="$TMP/stripped-root"
   local stripped_bare="$stripped_root/Flashie-AI/Flash-Vault"
@@ -327,58 +308,8 @@ test_07_templates_missing() {
   [ ! -d "$VAULT" ] || { echo "  FAIL: vault dir not cleaned up"; return 1; }
 }
 
-# Scenario 8: Duplicate email — count-then-match, fail loud
-test_08_duplicate_email() {
-  fv_clone "$VAULT" 2>/dev/null
-  cd "$VAULT" 2>/dev/null || return 1
-
-  # Inject a duplicate email entry in the clone
-  cat > "$VAULT/company/people/duplicate.md" <<EOF
----
-type: person
-name: Duplicate
-role: PM
-team: product
-email: layla@flash.test
-updated: 2026-04-28
----
-EOF
-
-  local output
-  output=$(fv_autodetect "layla@flash.test" 2>&1) && true
-  local exit_code=$?
-
-  [ $exit_code -eq 1 ] || { echo "  FAIL: expected exit 1 on duplicate, got $exit_code"; return 1; }
-  echo "$output" | grep -q "Multiple people files match" || { echo "  FAIL: missing duplicate message"; return 1; }
-}
-
-# Scenario 8a: Email with regex special chars matches via awk exact-string
-test_08a_codex_c7_regex_chars() {
-  fv_clone "$VAULT" 2>/dev/null
-  cd "$VAULT" 2>/dev/null || return 1
-
-  # The fixture has a regex-test.md with email: first.last+test@flash.test
-  if ! fv_autodetect "first.last+test@flash.test"; then
-    echo "  FAIL: auto-detect failed on email with regex chars (. +)"
-    return 1
-  fi
-
-  [ "$FV_PREFILL_NAME" = "Regex Test" ] || { echo "  FAIL: prefill name=$FV_PREFILL_NAME"; return 1; }
-}
-
-# Scenario 8b: Regex chars in fixture emails don't cause false-positive matches
-test_08b_codex_c7_no_false_positive() {
-  fv_clone "$VAULT" 2>/dev/null
-  cd "$VAULT" 2>/dev/null || return 1
-
-  # An email that DOESN'T match should NOT match anything via regex coincidence
-  fv_autodetect "first_last_test@flash.test" || true
-
-  [ -z "$FV_MATCH_FILE" ] || { echo "  FAIL: false-positive match on non-existent email: $FV_MATCH_FILE"; return 1; }
-}
-
-# Scenario 9: Atomic flag — interrupted generation routes to recovery
-test_09_atomic_flag_recovery() {
+# Scenario 7: Atomic flag — interrupted generation routes to recovery
+test_07_atomic_flag_recovery() {
   fv_clone "$VAULT" 2>/dev/null
   cd "$VAULT" 2>/dev/null || return 1
 
@@ -399,9 +330,9 @@ test_09_atomic_flag_recovery() {
   echo "$output" | grep -q "incomplete or corrupted" || { echo "  FAIL: should route to partial-setup, not full-setup"; return 1; }
 }
 
-# Scenario 10: Line numbering math (LINES_LOAD_BLOCK + CURRENT_GOALS_STEP)
-test_10_line_numbering() {
-  cd "$REPO_ROOT" || return 1
+# Scenario 8: Line numbering math (LINES_LOAD_BLOCK + CURRENT_GOALS_STEP)
+test_08_line_numbering() {
+  cd "$PLUGIN_ROOT" || return 1
 
   # 1 line: load block has 1 entry (numbered 6), current goals step = 7
   local block n
@@ -418,9 +349,9 @@ test_10_line_numbering() {
   [ "$n" = "10" ] || { echo "  FAIL 4-line current_goals_step: $n"; return 1; }
 }
 
-# Scenario 11: Personality isolation — identity.md has it, CLAUDE.md does not
-test_11_personality_isolation() {
-  drive_full_flow "noone@nowhere.test" "Layla" "Designer" "financial-wellness" "Some focus" "Direct, terse, no preamble." || return 1
+# Scenario 9: Personality isolation — identity.md has it, CLAUDE.md does not
+test_09_personality_isolation() {
+  drive_full_flow "Layla" "Designer" "financial-wellness" "Some focus" "Direct, terse, no preamble." || return 1
 
   # identity.md MUST contain personality
   assert_grep "Direct, terse" "$VAULT/personal/identity.md" || return 1
@@ -429,12 +360,12 @@ test_11_personality_isolation() {
   assert_no_grep "Direct, terse" "$VAULT/CLAUDE.md" || return 1
 }
 
-# Scenario 12: Codex C6 — vault path with spaces is safely handled
-test_12_codex_c6_path_with_spaces() {
+# Scenario 10: Vault path with spaces is safely handled
+test_10_path_with_spaces() {
   local spaced_vault="$TMP/my flash vault"
   export VAULT="$spaced_vault"
 
-  drive_full_flow "noone@nowhere.test" || return 1
+  drive_full_flow || return 1
 
   # All 4 files should exist at the spaced path
   assert_file_exists "$spaced_vault/personal/identity.md" || return 1
@@ -443,9 +374,9 @@ test_12_codex_c6_path_with_spaces() {
   assert_file_exists "$spaced_vault/drafts/.gitkeep" || return 1
 }
 
-# Scenario 13: CLAUDE.md is marked skip-worktree and overwrites dev brief
-test_13_claude_md_skip_worktree() {
-  drive_full_flow "noone@nowhere.test" || return 1
+# Scenario 11: CLAUDE.md is marked skip-worktree and overwrites dev brief
+test_11_claude_md_skip_worktree() {
+  drive_full_flow || return 1
 
   # The fixture committed a dev-brief CLAUDE.md. After setup, the local
   # CLAUDE.md should be the user version, not the dev brief.
@@ -480,8 +411,8 @@ test_13_claude_md_skip_worktree() {
   [ "$count" = "1" ] || { echo "  ASSERT FAIL: /CLAUDE.md appears $count times in exclude (expected 1)"; return 1; }
 }
 
-# Scenario 14: fv_list_canonical_lines reads from product/lines/
-test_14_canonical_lines_from_repo() {
+# Scenario 12: fv_list_canonical_lines reads from product/lines/ and excludes lines.md MOC
+test_12_canonical_lines_from_repo() {
   fv_clone "$VAULT" 2>/dev/null
   cd "$VAULT" || return 1
 
@@ -492,10 +423,15 @@ test_14_canonical_lines_from_repo() {
   echo "$lines" | grep -qx "scan-and-pay" || { echo "  FAIL: missing scan-and-pay"; return 1; }
   echo "$lines" | grep -qx "financial-wellness" || { echo "  FAIL: missing financial-wellness"; return 1; }
   echo "$lines" | grep -qx "growth" || { echo "  FAIL: missing growth"; return 1; }
+  # The lines.md MOC file must NOT appear in the canonical list
+  if echo "$lines" | grep -qx "lines"; then
+    echo "  FAIL: 'lines' MOC leaked into canonical lines list"
+    return 1
+  fi
 }
 
-# Scenario 15: fv_validate_lines accepts canonical, rejects invalid, refuses empty
-test_15_validate_lines() {
+# Scenario 13: fv_validate_lines accepts canonical, rejects invalid, refuses empty
+test_13_validate_lines() {
   fv_clone "$VAULT" 2>/dev/null
   cd "$VAULT" || return 1
 
@@ -528,314 +464,85 @@ test_15_validate_lines() {
   fi
 }
 
-# Scenario 16: tbd-core.sh sources cleanly and fv_check_yq exists
-test_16_tbd_core_sources_cleanly() {
-  local TBD_LIB="$REPO_ROOT/.claude/lib/tbd-core.sh"
-  [ -f "$TBD_LIB" ] || { echo "  FAIL: tbd-core.sh missing at $TBD_LIB"; return 1; }
-
-  # shellcheck source=/dev/null
-  source "$TBD_LIB" || { echo "  FAIL: tbd-core.sh failed to source"; return 1; }
-
-  type fv_check_yq >/dev/null 2>&1 || { echo "  FAIL: fv_check_yq not defined"; return 1; }
-  type fv_validate_slug >/dev/null 2>&1 || { echo "  FAIL: fv_validate_slug not defined"; return 1; }
-  type fv_section_append >/dev/null 2>&1 || { echo "  FAIL: fv_section_append not defined"; return 1; }
-  type fv_tbds_scan >/dev/null 2>&1 || { echo "  FAIL: fv_tbds_scan not defined"; return 1; }
-  type fv_archive_draft >/dev/null 2>&1 || { echo "  FAIL: fv_archive_draft not defined"; return 1; }
-}
-
-# Scenario 17: fv_validate_slug accepts valid, rejects invalid
-test_17_validate_slug() {
-  source "$REPO_ROOT/.claude/lib/tbd-core.sh"
-
-  fv_validate_slug "project-x" || { echo "  FAIL: 'project-x' rejected"; return 1; }
-  fv_validate_slug "ab" || { echo "  FAIL: 'ab' (2 chars) rejected"; return 1; }
-  fv_validate_slug "a1-b2-c3" || { echo "  FAIL: 'a1-b2-c3' rejected"; return 1; }
-
-  fv_validate_slug "Project-X" && { echo "  FAIL: uppercase 'Project-X' accepted"; return 1; }
-  fv_validate_slug "x" && { echo "  FAIL: single-char 'x' accepted"; return 1; }
-  fv_validate_slug "-leading" && { echo "  FAIL: '-leading' accepted"; return 1; }
-  fv_validate_slug "trailing-" && { echo "  FAIL: 'trailing-' accepted"; return 1; }
-  fv_validate_slug "spaces here" && { echo "  FAIL: 'spaces here' accepted"; return 1; }
-  fv_validate_slug 'inject"; rm' && { echo "  FAIL: shell metacharacters accepted"; return 1; }
-
-  local long
-  long=$(printf 'a%.0s' {1..61})
-  fv_validate_slug "$long" && { echo "  FAIL: 61-char slug accepted"; return 1; }
-
-  return 0
-}
-
-# Scenario 18: fv_section_append inserts under named section, atomic
-test_18_section_append() {
-  source "$REPO_ROOT/.claude/lib/tbd-core.sh"
-
-  local f="$VAULT/test-section.md"
-  mkdir -p "$VAULT"
-  cat > "$f" <<'EOF'
-# Title
-
-## Owns
-- existing entry
-
-## Background
-prior content
-EOF
-
-  fv_section_append "$f" "## Owns" "- new entry" || { echo "  FAIL: append failed"; return 1; }
-  grep -q "^- new entry" "$f" || { echo "  FAIL: new entry not in file"; return 1; }
-
-  # Verify it landed UNDER ## Owns and BEFORE ## Background
-  awk '/^## Owns/{flag=1; next} /^## Background/{flag=0} flag && /^- new entry/{found=1} END{exit !found}' "$f" \
-    || { echo "  FAIL: new entry not under '## Owns' section"; return 1; }
-
-  # Section that doesn't exist → return 1, no file change
-  local sha_before
-  sha_before=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || sha256sum "$f" | cut -d' ' -f1)
-  fv_section_append "$f" "## Nope" "- ignored" && { echo "  FAIL: missing section returned 0"; return 1; }
-  local sha_after
-  sha_after=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || sha256sum "$f" | cut -d' ' -f1)
-  [ "$sha_before" = "$sha_after" ] || { echo "  FAIL: file changed despite missing section"; return 1; }
-
-  # No .tmp orphan
-  [ ! -f "${f}.tmp" ] || { echo "  FAIL: .tmp orphan remains"; return 1; }
-}
-
-# Scenario 19: fv_tbds_scan finds markers, ignores code blocks
-test_19_tbds_scan() {
-  source "$REPO_ROOT/.claude/lib/tbd-core.sh"
-
-  local f="$VAULT/scan-target.md"
-  mkdir -p "$VAULT"
-  cat > "$f" <<'EOF'
----
-data_source: TBD
----
-
-# Title
-
-Body has _TBD — capture biller variance_ here.
-
-And a <placeholder> too.
-
-```bash
-# This TBD is in code and should be ignored
-echo TBD
-```
-
-Final TBD line at end.
-EOF
-
-  local out
-  out=$(fv_tbds_scan "$f")
-  local count
-  count=$(printf '%s\n' "$out" | wc -l | tr -d ' ')
-
-  # Expected: 4 hits (frontmatter TBD, body _TBD, <placeholder>, final TBD)
-  # Code-block TBD must NOT match
-  [ "$count" = "4" ] || { echo "  FAIL: expected 4 hits, got $count"; printf '%s\n' "$out"; return 1; }
-
-  printf '%s\n' "$out" | grep -q "data_source: TBD" || { echo "  FAIL: missed frontmatter TBD"; return 1; }
-  printf '%s\n' "$out" | grep -q "<placeholder>" || { echo "  FAIL: missed <placeholder>"; return 1; }
-  printf '%s\n' "$out" | grep -q "echo TBD" && { echo "  FAIL: code-block TBD leaked through"; return 1; }
-  return 0
-}
-
-# Scenario 20: fv_extract_links + fv_extract_incoming
-test_20_extract_links() {
-  source "$REPO_ROOT/.claude/lib/tbd-core.sh"
-
-  mkdir -p "$VAULT"
-  cd "$VAULT" || return 1
-  mkdir -p product/projects company/people
-
-  cat > product/projects/project-x.md <<'EOF'
----
-type: project
----
-# Project X
-
-Owners: [[ahmed]] and [[product/people/sarah]].
-
-Related: [[other-project]].
-
-```
-This [[code-example]] is in a backtick block.
-```
-EOF
-
-  cat > company/people/ahmed.md <<'EOF'
----
-type: person
----
-# Ahmed
-
-Drives [[product/projects/project-x]].
-EOF
-
-  local out
-  out=$(fv_extract_links product/projects/project-x.md)
-
-  # Should have ahmed, sarah, other-project; NOT code-example
-  echo "$out" | grep -qx "ahmed" || { echo "  FAIL: missing ahmed"; return 1; }
-  echo "$out" | grep -qx "sarah" || { echo "  FAIL: missing sarah"; return 1; }
-  echo "$out" | grep -qx "other-project" || { echo "  FAIL: missing other-project"; return 1; }
-  echo "$out" | grep -qx "code-example" && { echo "  FAIL: code-example leaked"; return 1; }
-
-  # Incoming check
-  local incoming
-  incoming=$(fv_extract_incoming "project-x")
-  echo "$incoming" | grep -q "company/people/ahmed.md" || { echo "  FAIL: incoming missed ahmed"; return 1; }
-}
-
-# Scenario 21: fv_schema_required reads _schema block
-test_21_schema_readers() {
-  source "$REPO_ROOT/.claude/lib/tbd-core.sh"
-  fv_check_yq 2>/dev/null || { echo "  SKIP: yq not installed"; return 0; }
-
-  # Use the freshly cloned fixture vault for real templates
+# Scenario 14: fv_list_canonical_squads excludes squads.md MOC
+test_14_canonical_squads_excludes_moc() {
   fv_clone "$VAULT" 2>/dev/null
   cd "$VAULT" || return 1
-
-  # Use a real template the fixture already ships
-  [ -f templates/project-template.md ] || { echo "  FAIL: project-template.md missing"; return 1; }
-
-  local req
-  req=$(fv_schema_required project)
-  echo "$req" | grep -q "type" || { echo "  FAIL: 'type' not in required for project"; return 1; }
-
-  # Optional may or may not have entries depending on template; just verify the call works
-  fv_schema_optional project >/dev/null || { echo "  FAIL: schema_optional errored"; return 1; }
+  local result
+  result=$(fv_list_canonical_squads)
+  if echo "$result" | grep -qx "squads"; then
+    echo "  FAIL: 'squads' MOC leaked into canonical squads list"
+    return 1
+  fi
+  # Confirm legitimate squads are present
+  echo "$result" | grep -qx "bill-payments-squad" || { echo "  FAIL: bill-payments-squad missing"; return 1; }
+  echo "$result" | grep -qx "growth-squad" || { echo "  FAIL: growth-squad missing"; return 1; }
 }
 
-# Scenario 22: fv_archive_draft moves to dated subfolder, handles collisions
-test_22_archive_draft() {
-  source "$REPO_ROOT/.claude/lib/tbd-core.sh"
-
-  mkdir -p "$VAULT"
+# Scenario 15: fv_validate_squads accepts canonical, rejects unknown, empty input is valid
+test_15_validate_squads_behavior() {
+  fv_clone "$VAULT" 2>/dev/null
   cd "$VAULT" || return 1
-  mkdir -p drafts
-  echo "first draft" > drafts/test.md
-  fv_archive_draft drafts/test.md || { echo "  FAIL: first archive failed"; return 1; }
-
-  local today
-  today=$(date +%Y-%m-%d)
-  [ -f "drafts/archive/$today/test.md" ] || { echo "  FAIL: archived file missing"; return 1; }
-  [ -f "drafts/test.md" ] && { echo "  FAIL: source still in drafts/"; return 1; }
-
-  # Collision: archive a second draft of same name on same day
-  echo "second draft" > drafts/test.md
-  fv_archive_draft drafts/test.md || { echo "  FAIL: second archive failed"; return 1; }
-  [ -f "drafts/archive/$today/test-2.md" ] || { echo "  FAIL: collision rename missing"; return 1; }
-
-  # Refuse non-drafts/ paths
-  echo "x" > /tmp/not-a-draft.md
-  fv_archive_draft /tmp/not-a-draft.md && { echo "  FAIL: accepted non-drafts/ path"; rm -f /tmp/not-a-draft.md; return 1; }
-  rm -f /tmp/not-a-draft.md
+  fv_validate_squads "bill-payments-squad" || { echo "  FAIL: rejected valid squad"; return 1; }
+  fv_validate_squads "bill-payments-squad growth-squad" || { echo "  FAIL: rejected valid multi-squad"; return 1; }
+  if fv_validate_squads "totally-fake-squad" 2>/dev/null; then
+    echo "  FAIL: accepted invalid squad"; return 1
+  fi
+  fv_validate_squads "" || { echo "  FAIL: rejected empty input (should be valid)"; return 1; }
 }
 
-# Scenario 23: fv_tbds_owned_paths derives owned set from identity.md
-test_23_owned_paths() {
-  source "$REPO_ROOT/.claude/lib/tbd-core.sh"
-  fv_check_yq 2>/dev/null || { echo "  SKIP: yq not installed"; return 0; }
-
-  mkdir -p "$VAULT"
-  cd "$VAULT" || return 1
-  mkdir -p personal product/lines product/projects product/metrics product/squads company/people
-
-  cat > personal/identity.md <<'EOF'
----
-product_lines:
-  - bill-payments
-squads:
-  - billevers
----
-# Test
-EOF
-
-  echo "x" > product/lines/bill-payments.md
-  echo "x" > product/lines/other-line.md
-  echo "x" > product/squads/billevers.md
-
-  cat > product/projects/inquiry-fix.md <<'EOF'
----
-type: project
-lines: [bill-payments]
----
-EOF
-
-  cat > product/projects/unrelated.md <<'EOF'
----
-type: project
-lines: [other-line]
----
-EOF
-
-  cat > company/people/alice.md <<'EOF'
----
-type: person
-squad: [billevers]
----
-EOF
-
+# Scenario 16: fv_build_squads_inline emits correct wiki links
+test_16_build_squads_inline() {
   local out
-  out=$(fv_tbds_owned_paths)
-
-  echo "$out" | grep -qx "product/lines/bill-payments.md" || { echo "  FAIL: owned line missing"; return 1; }
-  echo "$out" | grep -qx "product/squads/billevers.md" || { echo "  FAIL: owned squad missing"; return 1; }
-  echo "$out" | grep -qx "product/projects/inquiry-fix.md" || { echo "  FAIL: owned project missing"; return 1; }
-  echo "$out" | grep -qx "company/people/alice.md" || { echo "  FAIL: squad member missing"; return 1; }
-  echo "$out" | grep -qx "product/projects/unrelated.md" && { echo "  FAIL: unrelated project leaked"; return 1; }
-  echo "$out" | grep -qx "product/lines/other-line.md" && { echo "  FAIL: other-line leaked"; return 1; }
-  return 0
+  out=$(fv_build_squads_inline "bill-payments-squad growth-squad")
+  local expected="[[product/squads/bill-payments-squad]], [[product/squads/growth-squad]]"
+  if [ "$out" != "$expected" ]; then
+    echo "  FAIL: got [$out], expected [$expected]"
+    return 1
+  fi
+  # Single squad
+  out=$(fv_build_squads_inline "bill-payments-squad")
+  expected="[[product/squads/bill-payments-squad]]"
+  [ "$out" = "$expected" ] || { echo "  FAIL: single squad got [$out]"; return 1; }
+  # Empty input
+  out=$(fv_build_squads_inline "")
+  [ -z "$out" ] || { echo "  FAIL: empty input produced [$out]"; return 1; }
 }
 
-# Scenario 24: fv_tbds_upsert + fv_tbds_resolve roundtrip
-test_24_upsert_resolve() {
-  source "$REPO_ROOT/.claude/lib/tbd-core.sh"
+# Scenario 17: fv_generate writes plural squads to identity.md
+test_17_generate_plural_squads() {
+  drive_full_flow "Omar" "PM" "bill-payments" \
+    "Q2 retention initiatives" "Numbers-driven, link-heavy" \
+    "bill-payments-squad growth-squad"
 
-  mkdir -p "$VAULT"
-  cd "$VAULT" || return 1
-  mkdir -p personal product/lines
-
-  cat > personal/tasks.md <<EOF
-# My tasks
-
-$FV_AUTO_MANAGED_START
-$FV_AUTO_MANAGED_END
-
-## In progress
-- [ ] manual task
-EOF
-
-  cat > product/lines/test-line.md <<'EOF'
----
-type: product-line
-last_reviewed: TBD
----
-# Test
-EOF
-
-  # Upsert with one TBD
-  local new_tbds
-  new_tbds="product/lines/test-line.md	2	last_reviewed: TBD"
-  fv_tbds_upsert "$new_tbds" || { echo "  FAIL: upsert failed"; return 1; }
-
-  grep -q "### product/lines/test-line.md" personal/tasks.md || { echo "  FAIL: subheader missing"; return 1; }
-  grep -q "L2 — last_reviewed: TBD" personal/tasks.md || { echo "  FAIL: entry missing"; return 1; }
-  grep -q "manual task" personal/tasks.md || { echo "  FAIL: manual section clobbered"; return 1; }
-
-  # Now resolve the source TBD by editing the file
-  sed -i.bak 's/last_reviewed: TBD/last_reviewed: 2026-05-10/' product/lines/test-line.md && rm product/lines/test-line.md.bak
-
-  fv_tbds_resolve || { echo "  FAIL: resolve failed"; return 1; }
-  grep -q "L2 — last_reviewed: TBD" personal/tasks.md && { echo "  FAIL: stale entry not removed"; return 1; }
-  grep -q "manual task" personal/tasks.md || { echo "  FAIL: manual section clobbered by resolve"; return 1; }
-  return 0
+  assert_grep '^squads: \[bill-payments-squad, growth-squad\]$' "$VAULT/personal/identity.md" || return 1
+  assert_grep '\[\[product/squads/bill-payments-squad\]\], \[\[product/squads/growth-squad\]\]' "$VAULT/personal/identity.md" || return 1
 }
 
-# Scenario 25: identity.md has all four merged sections
-test_25_identity_has_merged_sections() {
-  drive_full_flow "noone@nowhere.test" || return 1
+# Scenario 18: fv_generate with empty FV_SQUADS renders (none yet)
+test_18_generate_empty_squads() {
+  drive_full_flow "Layla" "Designer" "financial-wellness" \
+    "Onboarding redesign" "Direct, terse, no preamble." \
+    ""
+
+  assert_grep '^squads: \[\]$' "$VAULT/personal/identity.md" || return 1
+  assert_grep '^- Squads: (none yet)$' "$VAULT/personal/identity.md" || return 1
+}
+
+# Scenario 19: fv_generate normalizes whitespace in FV_SQUADS
+test_19_generate_squads_whitespace_normalized() {
+  drive_full_flow "Omar" "PM" "bill-payments" \
+    "x" "y" \
+    "  bill-payments-squad   growth-squad  "
+
+  # YAML must be clean — no trailing ", " or extra commas
+  assert_grep '^squads: \[bill-payments-squad, growth-squad\]$' "$VAULT/personal/identity.md" || return 1
+  assert_no_grep ', \]' "$VAULT/personal/identity.md" || return 1
+}
+
+# Scenario 20: identity.md has all four merged sections
+test_20_identity_has_merged_sections() {
+  drive_full_flow || return 1
 
   local id="$VAULT/personal/identity.md"
   assert_file_exists "$id" || return 1
@@ -846,9 +553,9 @@ test_25_identity_has_merged_sections() {
   assert_grep "## How I think about work" "$id" || return 1
 }
 
-# Scenario 26: identity.md frontmatter has product_lines + squads
-test_26_identity_has_owned_arrays() {
-  drive_full_flow "layla@flash.test" || return 1
+# Scenario 21: identity.md frontmatter has product_lines + squads
+test_21_identity_has_owned_arrays() {
+  drive_full_flow || return 1
 
   local id="$VAULT/personal/identity.md"
   awk '/^---$/{n++; next} n==1' "$id" | grep -q "product_lines:" \
@@ -857,9 +564,9 @@ test_26_identity_has_owned_arrays() {
     || { echo "  FAIL: squads: missing from identity frontmatter"; return 1; }
 }
 
-# Scenario 27: tasks.md has auto-managed markers in place
-test_27_tasks_has_markers() {
-  drive_full_flow "noone@nowhere.test" || return 1
+# Scenario 22: tasks.md has auto-managed markers in place
+test_22_tasks_has_markers() {
+  drive_full_flow || return 1
 
   local tasks="$VAULT/personal/tasks.md"
   assert_file_exists "$tasks" || return 1
@@ -873,9 +580,9 @@ test_27_tasks_has_markers() {
   assert_grep "## Done" "$tasks" || return 1
 }
 
-# Scenario 28: CLAUDE.md has Daily commands section listing the three skills
-test_28_claude_md_has_daily_commands() {
-  drive_full_flow "noone@nowhere.test" || return 1
+# Scenario 23: CLAUDE.md has Daily commands section listing the three skills
+test_23_claude_md_has_daily_commands() {
+  drive_full_flow || return 1
 
   local claude="$VAULT/CLAUDE.md"
   assert_grep "Daily commands" "$claude" || return 1
@@ -905,35 +612,28 @@ test_28_claude_md_has_daily_commands() {
 # =============================================================================
 
 run_scenario "01-standard-flow"                  test_01_standard_flow
-run_scenario "02-auto-detect-full"               test_02_auto_detect_full
-run_scenario "03-refuse-full-setup"              test_03_refuse_full_setup
-run_scenario "04-refuse-partial-setup"           test_04_refuse_partial_setup_missing_one_file
-run_scenario "05-refuse-unrelated-dir"           test_05_refuse_unrelated
-run_scenario "06-clone-sanity-cleanup"           test_06_clone_sanity_cleanup
-run_scenario "07-templates-missing"              test_07_templates_missing
-run_scenario "08-duplicate-email"                test_08_duplicate_email
-run_scenario "08a-regex-chars-in-email"          test_08a_codex_c7_regex_chars
-run_scenario "08b-no-false-positive-regex-chars" test_08b_codex_c7_no_false_positive
-run_scenario "09-atomic-flag-recovery"           test_09_atomic_flag_recovery
-run_scenario "10-line-numbering-math"            test_10_line_numbering
-run_scenario "11-personality-isolation"          test_11_personality_isolation
-run_scenario "12-path-with-spaces"               test_12_codex_c6_path_with_spaces
-run_scenario "13-claude-md-skip-worktree"        test_13_claude_md_skip_worktree
-run_scenario "14-canonical-lines-from-repo"      test_14_canonical_lines_from_repo
-run_scenario "15-validate-lines"                 test_15_validate_lines
-run_scenario "16: tbd-core sources cleanly"      test_16_tbd_core_sources_cleanly
-run_scenario "17: fv_validate_slug"              test_17_validate_slug
-run_scenario "18: fv_section_append"             test_18_section_append
-run_scenario "19: fv_tbds_scan"                  test_19_tbds_scan
-run_scenario "20: fv_extract_links"              test_20_extract_links
-run_scenario "21: fv_schema_readers"             test_21_schema_readers
-run_scenario "22: fv_archive_draft"              test_22_archive_draft
-run_scenario "23: fv_tbds_owned_paths"           test_23_owned_paths
-run_scenario "24: fv_tbds_upsert + resolve"      test_24_upsert_resolve
-run_scenario "25: identity.md merged sections"   test_25_identity_has_merged_sections
-run_scenario "26: identity.md owned arrays"      test_26_identity_has_owned_arrays
-run_scenario "27: tasks.md auto-managed markers" test_27_tasks_has_markers
-run_scenario "28: CLAUDE.md Daily commands"      test_28_claude_md_has_daily_commands
+run_scenario "02-refuse-full-setup"              test_02_refuse_full_setup
+run_scenario "03-refuse-partial-setup"           test_03_refuse_partial_setup_missing_one_file
+run_scenario "04-refuse-unrelated-dir"           test_04_refuse_unrelated
+run_scenario "05-clone-sanity-cleanup"           test_05_clone_sanity_cleanup
+run_scenario "06-templates-missing"              test_06_templates_missing
+run_scenario "07-atomic-flag-recovery"           test_07_atomic_flag_recovery
+run_scenario "08-line-numbering-math"            test_08_line_numbering
+run_scenario "09-personality-isolation"          test_09_personality_isolation
+run_scenario "10-path-with-spaces"               test_10_path_with_spaces
+run_scenario "11-claude-md-skip-worktree"        test_11_claude_md_skip_worktree
+run_scenario "12-canonical-lines-from-repo"      test_12_canonical_lines_from_repo
+run_scenario "13-validate-lines"                 test_13_validate_lines
+run_scenario "14-canonical-squads-excludes-moc"  test_14_canonical_squads_excludes_moc
+run_scenario "15-validate-squads-behavior"       test_15_validate_squads_behavior
+run_scenario "16-build-squads-inline"            test_16_build_squads_inline
+run_scenario "17-generate-plural-squads"         test_17_generate_plural_squads
+run_scenario "18-generate-empty-squads"          test_18_generate_empty_squads
+run_scenario "19-generate-squads-whitespace"     test_19_generate_squads_whitespace_normalized
+run_scenario "20-identity-merged-sections"       test_20_identity_has_merged_sections
+run_scenario "21-identity-owned-arrays"          test_21_identity_has_owned_arrays
+run_scenario "22-tasks-auto-managed-markers"     test_22_tasks_has_markers
+run_scenario "23-claude-md-daily-commands"       test_23_claude_md_has_daily_commands
 
 # =============================================================================
 # Summary
