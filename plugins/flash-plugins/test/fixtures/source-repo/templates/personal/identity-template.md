@@ -10,9 +10,10 @@ updated: {{TODAY}}
 
 ## Who I am
 
+- Profile: [[company/people/{{PERSON_SLUG}}]]
 - Role: {{ROLE}}
 - Team: [[company/teams/{{TEAM}}]]
-- Lines I lead: {{LINES_BULLETED_INLINE}}
+- Product lines: {{LINES_BULLETED_INLINE}}
 - Squads: {{SQUADS_BULLETED_INLINE}}
 
 ## What I'm focused on now
@@ -27,13 +28,7 @@ updated: {{TODAY}}
 
 ## How I think about work
 
-Every session has three phases. Don't skip any.
-
-**Orient:** read this file, then `personal/tasks.md`, then `company/company.md`. Summarize back where things are. Everything else (lines, projects, metrics, people) is read on demand by following wiki links from this file or `personal/tasks.md`, or in response to my question.
-
-**Work:** one task at a time. Update notes when decisions are made. Drop discoveries that don't belong to the current task into `drafts/` — I'll process them later with `/flash-vault:process`.
-
-**Persist:** update the relevant project/line note. Refresh this file's "What I'm focused on" if priorities shifted. Update `personal/tasks.md` (manual sections only — auto-managed section is owned by skills).
+{{WORK_STYLE}}
 
 ## Note conventions (from CONTRIBUTING.md)
 
