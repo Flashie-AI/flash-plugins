@@ -517,7 +517,7 @@ fv_current_goals_step_num() {
 #   FV_NAME, FV_ROLE, FV_LINES (space-sep), FV_PRIMARY_LINE,
 #   FV_FOCUS, FV_PERSONALITY
 #   FV_TEAM (optional; defaults to "product")
-#   FV_SQUAD (optional)
+#   FV_SQUADS (optional, space-separated squad slugs)
 fv_generate() {
   local today
   today=$(date +%Y-%m-%d)
@@ -527,14 +527,19 @@ fv_generate() {
   local lines_bulleted_inline
   lines_bulleted_inline=$(fv_build_lines_inline "$FV_LINES")
 
-  local squads_bulleted_inline
-  squads_bulleted_inline="${FV_SQUAD:-}"  # set by caller (Task 5 plumbs FV_SQUADS through)
+  local squads_bulleted_inline squads_yaml
+  # Caller is responsible for validating FV_SQUADS via fv_validate_squads before
+  # invoking fv_generate; invalid slugs produce broken wiki links to nonexistent files.
+  if [ -n "$FV_SQUADS" ]; then
+    squads_bulleted_inline=$(fv_build_squads_inline "$FV_SQUADS")
+    squads_yaml=$(echo "$FV_SQUADS" | xargs | sed 's/ /, /g')
+  else
+    squads_bulleted_inline="(none yet)"
+    squads_yaml=""
+  fi
 
   local lines_yaml
-  lines_yaml=$(echo "$FV_LINES" | sed 's/ /, /g')
-
-  local squads_yaml
-  squads_yaml="${FV_SQUAD:-}"
+  lines_yaml=$(echo "$FV_LINES" | xargs | sed 's/ /, /g')
 
   local focus_links
   focus_links=$(fv_build_focus_links "$FV_FOCUS")
@@ -586,7 +591,7 @@ fv_generate() {
     ROLE "$FV_ROLE" \
     TEAM "${FV_TEAM:-product}" \
     LINES_BULLETED_INLINE "$lines_bulleted_inline" \
-    SQUADS_BULLETED_INLINE "${squads_bulleted_inline:-(none yet)}" \
+    SQUADS_BULLETED_INLINE "$squads_bulleted_inline" \
     LINES_YAML "$lines_yaml" \
     SQUADS_YAML "$squads_yaml" \
     FOCUS_LINKS "$focus_links" \
