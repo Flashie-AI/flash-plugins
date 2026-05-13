@@ -1,6 +1,6 @@
 {
   "name": "flash-plugins",
-  "version": "0.2.0",
+  "version": "0.1.1",
   "description": "Per-contributor setup for Flash Vault. Clones the private Flash-Vault repo to a path you choose, then generates personal/ files and a per-user CLAUDE.md so the AI loads Flash context calibrated to your role and product lines.",
   "author": {
     "name": "Flashie-AI",

@@ -12,7 +12,7 @@
 #     make any auth prompt fail fast instead of stealing stdin.
 #   - Clone identity is verified by checking the origin remote URL, not by
 #     heuristics on file presence — guards against typo-squatted forks.
-#   - Full-setup state requires ALL 6 overlay files to exist; missing any
+#   - Full-setup state requires ALL 4 overlay files to exist; missing any
 #     routes to the partial-setup recovery branch instead of "you're done".
 #   - identity.md is the LAST file written. Its presence is the atomic flag
 #     that means "setup completed cleanly." Mid-flight failure leaves it
@@ -21,11 +21,6 @@
 #     or shell metacharacters render safely in messages users can copy-paste.
 #   - Version compare is implemented in pure bash; sort -V is missing on
 #     stock macOS.
-#   - Email matching uses awk exact-string compare — no grep/regex, so
-#     emails containing regex metacharacters (. + etc) match correctly and
-#     can't false-positive on similar-looking addresses.
-#   - Duplicate email entries fail loud (count-then-match) rather than
-#     silently picking the first hit.
 #
 # All functions assume `set -euo pipefail` is set by the caller.
 #
@@ -80,42 +75,6 @@ fv_compare_version() {
 }
 
 # =============================================================================
-# YAML field readers — awk exact-string compare, no regex injection
-# =============================================================================
-#
-# Read a top-level YAML scalar field from a markdown frontmatter file.
-# Args: $1 = file path, $2 = field name (without colon)
-# Output: the value (trimmed), or empty string if absent.
-fv_yaml_field() {
-  local file="$1"
-  local key="$2:"
-  awk -v key="$key" '
-    $1 == key {
-      sub("^"key"[[:space:]]*", "")
-      sub("[[:space:]]+$", "")
-      print
-      exit
-    }
-  ' "$file" 2>/dev/null
-}
-
-# Find files in a directory whose `email:` YAML field exactly equals a target.
-# Args: $1 = target email, $2 = directory containing *.md files
-# Output: matching filenames, one per line.
-fv_match_email() {
-  local target="$1"
-  local dir="$2"
-  awk -v target="$target" '
-    /^email:[[:space:]]+/ {
-      val = $0
-      sub(/^email:[[:space:]]+/, "", val)
-      sub(/[[:space:]]+$/, "", val)
-      if (val == target) print FILENAME
-    }
-  ' "$dir"/*.md 2>/dev/null
-}
-
-# =============================================================================
 # Pre-flight: detect existing setup state at chosen path
 # =============================================================================
 #
@@ -126,7 +85,7 @@ fv_match_email() {
 #   (else: path does not exist or is empty -> return cleanly to continue)
 #
 # Identity verification: origin remote MUST match Flashie-AI/Flash-Vault.
-# Integrity verification: ALL 6 overlay files must exist.
+# Integrity verification: ALL 4 overlay files must exist.
 fv_is_flash_vault_clone() {
   local d="$1"
   [ -d "$d/.git" ] || return 1
@@ -285,71 +244,6 @@ fv_verify_clone() {
 }
 
 # =============================================================================
-# Auto-detect from git email
-# =============================================================================
-#
-# Populates these env vars (caller reads them):
-#   FV_PREFILL_NAME    — derived from people file's `name:` or filename slug
-#   FV_PREFILL_ROLE    — derived from people file's `role:`
-#   FV_PREFILL_SQUAD   — derived from people file's `squad:` (first slug)
-#   FV_PREFILL_LINES   — derived from squad file's `product_lines:`
-#   FV_MATCH_FILE      — path of the matched people file (or empty)
-#
-# Returns 0 if a unique match found, 1 if no match. Exits 1 on duplicate match.
-fv_autodetect() {
-  local email="$1"
-  FV_PREFILL_NAME=""
-  FV_PREFILL_ROLE=""
-  FV_PREFILL_SQUAD=""
-  FV_PREFILL_LINES=""
-  FV_MATCH_FILE=""
-
-  if [ -z "$email" ] || [ ! -d company/people ]; then
-    return 1
-  fi
-
-  local matches count
-  matches=$(fv_match_email "$email" company/people)
-  # Count non-empty lines via awk (always exits 0; avoids the
-  # "grep -c exits 1 then || echo 0 produces '0\n0'" bug where two echoes
-  # combined trip subsequent integer comparisons).
-  count=$(printf '%s\n' "$matches" | awk 'NF{n++} END{print n+0}')
-
-  if [ "$count" -gt 1 ]; then
-    fv_error "Multiple people files match your email ($email):"
-    echo "$matches" | sed 's/^/  /' >&2
-    fv_error "This is a data error in company/people/. Open one of these files, fix the duplicate email, then re-run."
-    exit 1
-  fi
-
-  if [ "$count" != "1" ]; then
-    return 1
-  fi
-
-  FV_MATCH_FILE="$matches"
-
-  # Defensive parsing: every field is optional. Missing field -> empty pre-fill.
-  FV_PREFILL_NAME=$(fv_yaml_field "$FV_MATCH_FILE" name)
-  FV_PREFILL_ROLE=$(fv_yaml_field "$FV_MATCH_FILE" role)
-  # squad may be `[a-squad]` or just `a-squad` — strip brackets/quotes, take first.
-  FV_PREFILL_SQUAD=$(fv_yaml_field "$FV_MATCH_FILE" squad | tr -d '[]"' | awk '{print $1}')
-
-  # Fall back to filename if name field absent
-  [ -z "$FV_PREFILL_NAME" ] && FV_PREFILL_NAME=$(basename "$FV_MATCH_FILE" .md)
-
-  # Derive lines from the squad's product_lines field. Squads live at
-  # product/squads/ (the canonical location).
-  if [ -n "$FV_PREFILL_SQUAD" ]; then
-    local squad_file="product/squads/${FV_PREFILL_SQUAD}.md"
-    if [ -f "$squad_file" ]; then
-      FV_PREFILL_LINES=$(fv_yaml_field "$squad_file" product_lines | tr -d '[]"' | sed 's/,/ /g' | xargs)
-    fi
-  fi
-
-  return 0
-}
-
-# =============================================================================
 # Canonical product-line list (read from the cloned repo, not hardcoded)
 # =============================================================================
 #
@@ -362,10 +256,12 @@ fv_list_canonical_lines() {
   if [ ! -d product/lines ]; then
     return 0
   fi
-  local f
+  local f base
   for f in product/lines/*.md; do
     [ -e "$f" ] || continue
-    basename "$f" .md
+    base=$(basename "$f" .md)
+    [ "$base" = "lines" ] && continue   # skip MOC (convention: MOC basename = parent dir name)
+    printf '%s\n' "$base"
   done | sort -u
 }
 
@@ -403,6 +299,73 @@ fv_validate_lines() {
   fi
 
   return 0
+}
+
+# =============================================================================
+# Canonical squads list + validation + builders (mirror of lines)
+# =============================================================================
+
+# Canonical squads list. Same MOC exclusion as fv_list_canonical_lines.
+fv_list_canonical_squads() {
+  if [ ! -d product/squads ]; then
+    return 0
+  fi
+  local f base
+  for f in product/squads/*.md; do
+    [ -e "$f" ] || continue
+    base=$(basename "$f" .md)
+    [ "$base" = "squads" ] && continue   # skip MOC (convention: MOC basename = parent dir name)
+    printf '%s\n' "$base"
+  done | sort -u
+}
+
+# Validate a space-separated list of squad slugs against the canonical list.
+# Returns 0 if every slug is canonical (and the list is non-empty), 1 otherwise.
+# Empty input is valid — contributors may legitimately not be in any squad.
+fv_validate_squads() {
+  local user_squads="$1"
+  if [ -z "$user_squads" ]; then
+    return 0
+  fi
+
+  local canonical
+  canonical=$(fv_list_canonical_squads)
+  if [ -z "$canonical" ]; then
+    fv_error "No squads defined in the vault yet (product/squads/ is empty)."
+    fv_error "Either skip squad entry, or have a maintainer seed product/squads/<slug>.md first."
+    return 1
+  fi
+
+  local invalid="" slug
+  for slug in $user_squads; do
+    if ! printf '%s\n' "$canonical" | grep -qx "$slug"; then
+      invalid+="$slug "
+    fi
+  done
+
+  if [ -n "$invalid" ]; then
+    fv_error "Invalid squad slug(s): $invalid"
+    fv_error "Valid slugs (from product/squads/):"
+    printf '%s\n' "$canonical" | sed 's/^/  /' >&2
+    return 1
+  fi
+
+  return 0
+}
+
+# Inline-formatted squad links (comma-separated wiki links).
+# Args: $1 = space-separated slug list
+# Output: e.g. "[[product/squads/billevers]], [[product/squads/mercury]]"
+fv_build_squads_inline() {
+  local squads="$1"
+  local out=""
+  local first=1
+  local slug
+  for slug in $squads; do
+    if [ $first -eq 1 ]; then first=0; else out+=", "; fi
+    out+="[[product/squads/${slug}]]"
+  done
+  printf '%s' "$out"
 }
 
 # =============================================================================
@@ -554,25 +517,29 @@ fv_current_goals_step_num() {
 #   FV_NAME, FV_ROLE, FV_LINES (space-sep), FV_PRIMARY_LINE,
 #   FV_FOCUS, FV_PERSONALITY
 #   FV_TEAM (optional; defaults to "product")
-#   FV_SQUAD (optional; sourced from FV_PREFILL_SQUAD if absent)
+#   FV_SQUADS (optional, space-separated squad slugs)
 fv_generate() {
   local today
   today=$(date +%Y-%m-%d)
 
-  # FV_SQUAD: explicit override > autodetect prefill > empty
-  : "${FV_SQUAD:=${FV_PREFILL_SQUAD:-}}"
+  : "${FV_SQUADS:=}"
 
   local lines_bulleted_inline
   lines_bulleted_inline=$(fv_build_lines_inline "$FV_LINES")
 
-  local squads_bulleted_inline
-  squads_bulleted_inline="${FV_SQUAD:-}"  # auto-detect populates this; empty if absent
+  local squads_bulleted_inline squads_yaml
+  # Caller is responsible for validating FV_SQUADS via fv_validate_squads before
+  # invoking fv_generate; invalid slugs produce broken wiki links to nonexistent files.
+  if [ -n "$FV_SQUADS" ]; then
+    squads_bulleted_inline=$(fv_build_squads_inline "$FV_SQUADS")
+    squads_yaml=$(echo "$FV_SQUADS" | xargs | sed 's/ /, /g')
+  else
+    squads_bulleted_inline="(none yet)"
+    squads_yaml=""
+  fi
 
   local lines_yaml
-  lines_yaml=$(echo "$FV_LINES" | sed 's/ /, /g')
-
-  local squads_yaml
-  squads_yaml="${FV_SQUAD:-}"
+  lines_yaml=$(echo "$FV_LINES" | xargs | sed 's/ /, /g')
 
   local focus_links
   focus_links=$(fv_build_focus_links "$FV_FOCUS")
@@ -624,7 +591,7 @@ fv_generate() {
     ROLE "$FV_ROLE" \
     TEAM "${FV_TEAM:-product}" \
     LINES_BULLETED_INLINE "$lines_bulleted_inline" \
-    SQUADS_BULLETED_INLINE "${squads_bulleted_inline:-(none yet)}" \
+    SQUADS_BULLETED_INLINE "$squads_bulleted_inline" \
     LINES_YAML "$lines_yaml" \
     SQUADS_YAML "$squads_yaml" \
     FOCUS_LINKS "$focus_links" \
