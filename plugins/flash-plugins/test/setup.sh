@@ -209,7 +209,7 @@ test_02_refuse_full_setup() {
   local exit_code=$?
 
   [ $exit_code -eq 0 ] || { echo "  FAIL: expected exit 0, got $exit_code"; return 1; }
-  echo "$output" | grep -q "already have a Flash Vault setup" || { echo "  FAIL: missing 'already have setup' message"; return 1; }
+  echo "$output" | grep -q "already have a Flash Vault set up" || { echo "  FAIL: missing 'already have setup' message"; return 1; }
 }
 
 # Scenario 3: Pre-clone refuse — partial setup (single missing overlay file)
@@ -231,7 +231,7 @@ test_03_refuse_partial_setup_missing_one_file() {
   local exit_code=$?
 
   [ $exit_code -eq 0 ] || { echo "  FAIL: expected exit 0, got $exit_code"; return 1; }
-  echo "$output" | grep -q "incomplete or corrupted" || { echo "  FAIL: missing partial-setup message"; return 1; }
+  echo "$output" | grep -q "personal setup didn't finish" || { echo "  FAIL: missing partial-setup message"; return 1; }
   echo "$output" | grep -q "rm -rf personal/ drafts/ CLAUDE.md" || { echo "  FAIL: missing recovery cmd"; return 1; }
 }
 
@@ -327,7 +327,7 @@ test_07_atomic_flag_recovery() {
   local exit_code=$?
 
   [ $exit_code -eq 0 ] || { echo "  FAIL: expected exit 0, got $exit_code"; return 1; }
-  echo "$output" | grep -q "incomplete or corrupted" || { echo "  FAIL: should route to partial-setup, not full-setup"; return 1; }
+  echo "$output" | grep -q "personal setup didn't finish" || { echo "  FAIL: should route to partial-setup, not full-setup"; return 1; }
 }
 
 # Scenario 8: Line numbering math (LINES_LOAD_BLOCK + CURRENT_GOALS_STEP)
@@ -607,6 +607,119 @@ test_23_claude_md_has_daily_commands() {
   return 0
 }
 
+# Scenario 24: fv_slugify handles whitespace, casing, and non-alphanumeric runs
+test_24_slugify() {
+  [ "$(fv_slugify "Tarek Rajab")" = "tarek-rajab" ] \
+    || { echo "  FAIL: 'Tarek Rajab' did not slug to 'tarek-rajab'"; return 1; }
+  [ "$(fv_slugify "Ahmed  AbuGameel")" = "ahmed-abugameel" ] \
+    || { echo "  FAIL: double-space did not collapse"; return 1; }
+  [ "$(fv_slugify "  --weird name??")" = "weird-name" ] \
+    || { echo "  FAIL: leading/trailing punctuation not trimmed"; return 1; }
+  [ "$(fv_slugify "MIXED_Case 123")" = "mixed-case-123" ] \
+    || { echo "  FAIL: mixed-case + underscore + digits"; return 1; }
+  return 0
+}
+
+# Scenario 25: fv_create_person_if_missing renders a stub from the template
+test_25_create_person_if_missing_creates() {
+  fv_clone "$VAULT"
+  cd "$VAULT" || return 1
+  fv_verify_clone
+
+  # No file at company/people/tarek-rajab.md yet
+  [ ! -f company/people/tarek-rajab.md ] || { echo "  FAIL: precondition — file already exists"; return 1; }
+
+  fv_create_person_if_missing "tarek-rajab" "Tarek Rajab" "Product Designer" "design" "billevers"
+
+  assert_file_exists company/people/tarek-rajab.md || return 1
+  assert_grep "# Tarek Rajab"          company/people/tarek-rajab.md || return 1
+  assert_grep "^role: Product Designer" company/people/tarek-rajab.md || return 1
+  assert_grep "^team: design"          company/people/tarek-rajab.md || return 1
+  assert_grep "^squad: \[billevers\]"  company/people/tarek-rajab.md || return 1
+  # _schema block must be stripped in the rendered file
+  assert_no_grep "_schema:" company/people/tarek-rajab.md || return 1
+  return 0
+}
+
+# Scenario 26: fv_create_person_if_missing leaves an existing file untouched
+test_26_create_person_if_missing_preserves_existing() {
+  fv_clone "$VAULT"
+  cd "$VAULT" || return 1
+  fv_verify_clone
+
+  mkdir -p company/people
+  printf 'EXISTING SENTINEL — do not overwrite\n' > company/people/tarek-rajab.md
+
+  fv_create_person_if_missing "tarek-rajab" "Tarek Rajab" "Product Designer" "design" "billevers"
+
+  assert_grep "EXISTING SENTINEL" company/people/tarek-rajab.md \
+    || { echo "  FAIL: function overwrote an existing file"; return 1; }
+  return 0
+}
+
+# Scenario 27: fv_drop_missing_project_drafts creates a draft only for slugs
+# that don't already have a real project note AND don't have a pending draft.
+test_27_drop_missing_project_drafts() {
+  fv_clone "$VAULT"
+  cd "$VAULT" || return 1
+  fv_verify_clone
+
+  mkdir -p product/projects drafts
+  printf -- '---\ntype: project\n---\n# Already filed\n' > product/projects/already-filed.md
+  printf 'pending\n' > drafts/project-already-drafted.md
+
+  fv_drop_missing_project_drafts "already-filed already-drafted brand-new-one"
+
+  # already-filed → no draft created (real note exists)
+  [ ! -f drafts/project-already-filed.md ] \
+    || { echo "  FAIL: should not create draft for existing project note"; return 1; }
+  # already-drafted → unchanged
+  assert_grep "^pending$" drafts/project-already-drafted.md \
+    || { echo "  FAIL: existing draft was overwritten"; return 1; }
+  # brand-new-one → fresh draft created
+  assert_file_exists drafts/project-brand-new-one.md || return 1
+  assert_grep "Mentioned during setup" drafts/project-brand-new-one.md || return 1
+  assert_grep "/process drafts/project-brand-new-one.md" drafts/project-brand-new-one.md || return 1
+  return 0
+}
+
+# Scenario 28: identity.md gains a Profile wiki link to the user's person file
+test_28_identity_has_profile_link() {
+  drive_full_flow "Tarek Rajab" "Product Designer" "financial-wellness" || return 1
+
+  assert_grep "Profile: \[\[company/people/tarek-rajab\]\]" "$VAULT/personal/identity.md" \
+    || { echo "  FAIL: identity.md missing Profile link"; return 1; }
+  # And the matching person stub should have been created
+  assert_file_exists "$VAULT/company/people/tarek-rajab.md" || return 1
+  return 0
+}
+
+# Scenario 29: FV_WORK_STYLE prose renders into identity.md's
+# "How I think about work" section verbatim.
+test_29_identity_work_style_filled() {
+  export FV_WORK_STYLE="Async-first, ship daily, push back hard on scope creep."
+  drive_full_flow "Layla" "Engineer" "financial-wellness" || { unset FV_WORK_STYLE; return 1; }
+  unset FV_WORK_STYLE
+
+  assert_grep "Async-first, ship daily, push back hard on scope creep." "$VAULT/personal/identity.md" || return 1
+  # The old hardcoded session-rhythm text must NOT leak into identity.md
+  assert_no_grep "Every session has three phases" "$VAULT/personal/identity.md" || return 1
+  return 0
+}
+
+# Scenario 30: empty FV_WORK_STYLE renders an editable prompt line
+# instead of leaving the placeholder unsubstituted.
+test_30_identity_work_style_empty_renders_prompt() {
+  unset FV_WORK_STYLE
+  drive_full_flow "Layla" "Engineer" "financial-wellness" || return 1
+
+  assert_grep "Edit this — describe your work style" "$VAULT/personal/identity.md" \
+    || { echo "  FAIL: empty work-style should render a prompt line"; return 1; }
+  # No unrendered placeholder should remain in the file
+  assert_no_grep "{{WORK_STYLE}}" "$VAULT/personal/identity.md" || return 1
+  return 0
+}
+
 # =============================================================================
 # Run all scenarios
 # =============================================================================
@@ -634,6 +747,13 @@ run_scenario "20-identity-merged-sections"       test_20_identity_has_merged_sec
 run_scenario "21-identity-owned-arrays"          test_21_identity_has_owned_arrays
 run_scenario "22-tasks-auto-managed-markers"     test_22_tasks_has_markers
 run_scenario "23-claude-md-daily-commands"       test_23_claude_md_has_daily_commands
+run_scenario "24-slugify"                        test_24_slugify
+run_scenario "25-create-person-if-missing"       test_25_create_person_if_missing_creates
+run_scenario "26-create-person-preserves-existing" test_26_create_person_if_missing_preserves_existing
+run_scenario "27-drop-missing-project-drafts"    test_27_drop_missing_project_drafts
+run_scenario "28-identity-has-profile-link"      test_28_identity_has_profile_link
+run_scenario "29-identity-work-style-filled"     test_29_identity_work_style_filled
+run_scenario "30-identity-work-style-empty"      test_30_identity_work_style_empty_renders_prompt
 
 # =============================================================================
 # Summary
