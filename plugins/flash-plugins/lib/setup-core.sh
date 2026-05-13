@@ -256,10 +256,12 @@ fv_list_canonical_lines() {
   if [ ! -d product/lines ]; then
     return 0
   fi
-  local f
+  local f base
   for f in product/lines/*.md; do
     [ -e "$f" ] || continue
-    basename "$f" .md
+    base=$(basename "$f" .md)
+    [ "$base" = "lines" ] && continue   # skip MOC (convention: MOC basename = parent dir name)
+    printf '%s\n' "$base"
   done | sort -u
 }
 
