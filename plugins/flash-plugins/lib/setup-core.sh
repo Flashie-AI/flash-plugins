@@ -28,6 +28,16 @@
 #     silently picking the first hit.
 #
 # All functions assume `set -euo pipefail` is set by the caller.
+#
+# Cross-shell compat: this lib is bash-style, but Claude Code's Bash tool runs
+# commands under the user's login shell (zsh on macOS) and `source` ignores the
+# shebang. In zsh, `for x in $var` does NOT word-split unquoted variables by
+# default — the entire string is one iteration. That breaks every loop in this
+# lib that iterates over space-separated slugs (FV_LINES, FV_SQUADS, etc).
+# SH_WORD_SPLIT makes zsh behave like bash/sh for this case. No-op under bash.
+if [ -n "${ZSH_VERSION:-}" ]; then
+  setopt SH_WORD_SPLIT 2>/dev/null || true
+fi
 
 # =============================================================================
 # Logging helpers
