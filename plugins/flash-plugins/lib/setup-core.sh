@@ -302,6 +302,73 @@ fv_validate_lines() {
 }
 
 # =============================================================================
+# Canonical squads list + validation + builders (mirror of lines)
+# =============================================================================
+
+# Canonical squads list. Same MOC exclusion as fv_list_canonical_lines.
+fv_list_canonical_squads() {
+  if [ ! -d product/squads ]; then
+    return 0
+  fi
+  local f base
+  for f in product/squads/*.md; do
+    [ -e "$f" ] || continue
+    base=$(basename "$f" .md)
+    [ "$base" = "squads" ] && continue   # skip MOC (convention: MOC basename = parent dir name)
+    printf '%s\n' "$base"
+  done | sort -u
+}
+
+# Validate a space-separated list of squad slugs against the canonical list.
+# Returns 0 if every slug is canonical (and the list is non-empty), 1 otherwise.
+# Empty input is valid — contributors may legitimately not be in any squad.
+fv_validate_squads() {
+  local user_squads="$1"
+  if [ -z "$user_squads" ]; then
+    return 0
+  fi
+
+  local canonical
+  canonical=$(fv_list_canonical_squads)
+  if [ -z "$canonical" ]; then
+    fv_error "No squads defined in the vault yet (product/squads/ is empty)."
+    fv_error "Either skip squad entry, or have a maintainer seed product/squads/<slug>.md first."
+    return 1
+  fi
+
+  local invalid="" slug
+  for slug in $user_squads; do
+    if ! printf '%s\n' "$canonical" | grep -qx "$slug"; then
+      invalid+="$slug "
+    fi
+  done
+
+  if [ -n "$invalid" ]; then
+    fv_error "Invalid squad slug(s): $invalid"
+    fv_error "Valid slugs (from product/squads/):"
+    printf '%s\n' "$canonical" | sed 's/^/  /' >&2
+    return 1
+  fi
+
+  return 0
+}
+
+# Inline-formatted squad links (comma-separated wiki links).
+# Args: $1 = space-separated slug list
+# Output: e.g. "[[product/squads/billevers]], [[product/squads/mercury]]"
+fv_build_squads_inline() {
+  local squads="$1"
+  local out=""
+  local first=1
+  local slug
+  for slug in $squads; do
+    if [ $first -eq 1 ]; then first=0; else out+=", "; fi
+    out+="[[product/squads/${slug}]]"
+  done
+  printf '%s' "$out"
+}
+
+# =============================================================================
 # Render a template with placeholder substitution
 # =============================================================================
 #
