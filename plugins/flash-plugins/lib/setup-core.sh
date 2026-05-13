@@ -116,26 +116,23 @@ fv_check_existing_path() {
       # State 1: full + verified setup
       local date
       date=$(grep '^updated:' "$vault/personal/identity.md" 2>/dev/null | head -1 | sed 's/^updated:[[:space:]]*//' || echo "unknown")
-      fv_log "You already have a Flash Vault setup at $qvault (personal/identity.md updated $date)."
+      fv_log "You already have a Flash Vault set up at $qvault (last updated $date)."
       fv_log ""
-      fv_log "The setup skill is one-time per vault location. Options:"
-      fv_log "  1. Open Claude Code at $qvault and start working — your AI brief is already there."
-      fv_log "  2. Delete the overlay, then re-run this skill:"
+      fv_log "Setup runs once per vault. From here you can:"
+      fv_log "  1. Open Claude Code at $qvault and start working."
+      fv_log "  2. Edit your personal files directly — they live in $qvault/personal/ and $qvault/CLAUDE.md."
+      fv_log "  3. Reset and re-run setup:"
       fv_log "       cd $qvault && rm -rf personal/ drafts/ CLAUDE.md && git -C $qvault update-index --no-skip-worktree CLAUDE.md 2>/dev/null && git -C $qvault checkout -- CLAUDE.md"
-      fv_log "  3. Edit personal/{identity,tasks}.md and CLAUDE.md directly — they are local-only on your clone."
-      fv_log "  4. Choose a different vault path next time you run setup."
-      fv_log ""
-      fv_log "See CONTRIBUTING.md inside the vault for more on local-only files."
+      fv_log "  4. Choose a different folder next time you run setup."
       exit 0
     else
       # State 2: partial / corrupted setup — at least one overlay file missing.
-      fv_log "$qvault is a Flash-Vault clone where the personal overlay is incomplete or corrupted."
-      fv_log "(Expected 4 files: personal/{identity,tasks}.md, CLAUDE.md, drafts/.gitkeep)"
+      fv_log "$qvault looks like a Flash Vault clone, but your personal setup didn't finish — some files are missing."
       fv_log ""
-      fv_log "To clean up and re-run:"
+      fv_log "To reset and try again:"
       fv_log "  cd $qvault && rm -rf personal/ drafts/ CLAUDE.md && git update-index --no-skip-worktree CLAUDE.md 2>/dev/null && git checkout -- CLAUDE.md"
       fv_log ""
-      fv_log "Then run this skill again. Your local commits and unsynced edits in $qvault will be preserved."
+      fv_log "Then re-run setup. Your other local edits in $qvault are preserved."
       exit 0
     fi
   fi
@@ -353,6 +350,99 @@ fv_validate_squads() {
   return 0
 }
 
+# Lowercase + non-alphanumerics → "-" + trim leading/trailing dashes.
+# Used for deriving a person slug from FV_NAME so identity.md can link to a
+# canonical `company/people/<slug>.md` file. Collisions (two contributors with
+# the same slug) are out of scope for v1 — the user can rename manually.
+fv_slugify() {
+  printf '%s\n' "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g'
+}
+
+# Render a stub `company/people/<slug>.md` from the person template if no file
+# at that path already exists. The file is untracked-by-default in the user's
+# clone (it lives under the tracked `company/people/` directory, so it shows up
+# as untracked until the user ships it via /push-to-flash-vault).
+#
+# Args:
+#   $1 = person slug (e.g. "tarek-rajab")
+#   $2 = display name (e.g. "Tarek Rajab")
+#   $3 = role
+#   $4 = team slug (defaults to "product" when caller passes empty)
+#   $5 = squads (space-separated; may be empty)
+fv_create_person_if_missing() {
+  local slug="$1"
+  local name="$2"
+  local role="$3"
+  local team="${4:-product}"
+  local squads="$5"
+
+  local dest="company/people/$slug.md"
+  [ -f "$dest" ] && return 0
+  [ -f templates/person-template.md ] || return 0
+
+  local squads_yaml
+  if [ -n "$squads" ]; then
+    squads_yaml=$(echo "$squads" | xargs | sed 's/ /, /g')
+  else
+    squads_yaml=""
+  fi
+
+  local today
+  today=$(date +%Y-%m-%d)
+
+  mkdir -p company/people
+
+  # Render manually rather than via fv_render_template because the person
+  # template ships with a `_schema:` block we must strip and slug-shaped
+  # frontmatter values that aren't `{{KEY}}` placeholders.
+  awk -v name="$name" -v role="$role" -v team="$team" -v squads="$squads_yaml" -v today="$today" '
+    BEGIN { in_schema = 0 }
+    /^_schema:[[:space:]]*$/ { in_schema = 1; next }
+    in_schema && /^[^[:space:]]/ { in_schema = 0 }
+    in_schema { next }
+    /^role:[[:space:]]*<role title>/    { print "role: " role; next }
+    /^team:[[:space:]]*<functional team slug>/ { print "team: " team; next }
+    /^# squad:/                          { next }
+    /^squad:[[:space:]]*\[<squad slug>\]/ {
+      if (squads != "") { print "squad: [" squads "]" } else { print "squad: []" }
+      next
+    }
+    /^updated:[[:space:]]*YYYY-MM-DD/    { print "updated: " today; next }
+    /^# <Full name>/                     { print "# " name; next }
+    /^One sentence:/                     { print "_TBD — describe role, squad, and anchor in one line. Drop a draft and run /process to flesh out the rest._"; next }
+    { print }
+  ' templates/person-template.md > "$dest"
+}
+
+# For each project slug the user mentioned during setup, drop a stub draft into
+# `drafts/project-<slug>.md` IF no real project note exists yet AND no draft
+# with the same name is already pending. The user runs `/process` later to
+# turn these into proper `product/projects/<slug>.md` notes.
+#
+# We don't auto-create real project notes from a passing setup mention because
+# the project template has many required fields (status, pm, squad, started,
+# target_launch) that we can't fill from a single sentence.
+#
+# Args: $1 = space-separated project slugs
+fv_drop_missing_project_drafts() {
+  local slugs="$1"
+  [ -z "$slugs" ] && return 0
+  mkdir -p drafts
+  local slug
+  for slug in $slugs; do
+    [ -z "$slug" ] && continue
+    if [ ! -f "product/projects/$slug.md" ] && [ ! -f "drafts/project-$slug.md" ]; then
+      cat > "drafts/project-$slug.md" <<EOF
+# $slug
+
+Mentioned during setup. Run \`/process drafts/project-$slug.md\` to file this as a proper project note under \`product/projects/\`.
+EOF
+    fi
+  done
+}
+
 # Inline-formatted squad links (comma-separated wiki links).
 # Args: $1 = space-separated slug list
 # Output: e.g. "[[product/squads/billevers]], [[product/squads/mercury]]"
@@ -516,13 +606,19 @@ fv_current_goals_step_num() {
 # Args via env vars (set by caller):
 #   FV_NAME, FV_ROLE, FV_LINES (space-sep), FV_PRIMARY_LINE,
 #   FV_FOCUS, FV_PERSONALITY
+#   FV_WORK_STYLE (optional; how the user likes to work — fills identity.md
+#                  "How I think about work")
 #   FV_TEAM (optional; defaults to "product")
 #   FV_SQUADS (optional, space-separated squad slugs)
+#   FV_PROJECTS_MENTIONED (optional, space-separated project slugs the user
+#                  named during setup; missing ones get draft stubs in drafts/)
 fv_generate() {
   local today
   today=$(date +%Y-%m-%d)
 
   : "${FV_SQUADS:=}"
+  : "${FV_WORK_STYLE:=}"
+  : "${FV_PROJECTS_MENTIONED:=}"
 
   local lines_bulleted_inline
   lines_bulleted_inline=$(fv_build_lines_inline "$FV_LINES")
@@ -544,9 +640,28 @@ fv_generate() {
   local focus_links
   focus_links=$(fv_build_focus_links "$FV_FOCUS")
 
+  local person_slug
+  person_slug=$(fv_slugify "$FV_NAME")
+
+  local work_style_rendered
+  if [ -n "$FV_WORK_STYLE" ]; then
+    work_style_rendered="$FV_WORK_STYLE"
+  else
+    work_style_rendered="(Edit this — describe your work style: pace, decision-making, where you want the AI to push back, what you want surfaced.)"
+  fi
+
   # 1. Directory scaffold
   mkdir -p personal drafts
   touch drafts/.gitkeep
+
+  # 1a. Person stub in company/people/ if missing — gives identity.md a valid
+  # `[[company/people/<slug>]]` link target. File is untracked locally; user
+  # ships it via /push-to-flash-vault when ready.
+  fv_create_person_if_missing "$person_slug" "$FV_NAME" "$FV_ROLE" "${FV_TEAM:-product}" "$FV_SQUADS"
+
+  # 1b. Drop draft stubs for any projects the user mentioned that don't yet
+  # exist in product/projects/. The user runs /process later to file each one.
+  fv_drop_missing_project_drafts "$FV_PROJECTS_MENTIONED"
 
   # 2. tasks.md (with auto-managed markers section pre-populated empty)
   fv_render_template templates/tasks-template.md personal/tasks.md \
@@ -590,12 +705,14 @@ fv_generate() {
     NAME "$FV_NAME" \
     ROLE "$FV_ROLE" \
     TEAM "${FV_TEAM:-product}" \
+    PERSON_SLUG "$person_slug" \
     LINES_BULLETED_INLINE "$lines_bulleted_inline" \
     SQUADS_BULLETED_INLINE "$squads_bulleted_inline" \
     LINES_YAML "$lines_yaml" \
     SQUADS_YAML "$squads_yaml" \
     FOCUS_LINKS "$focus_links" \
     PERSONALITY "$FV_PERSONALITY" \
+    WORK_STYLE "$work_style_rendered" \
     LINES "$lines_yaml" \
     TODAY "$today"
 
@@ -625,13 +742,13 @@ fv_success() {
   local role="$4"
 
   fv_log ""
-  fv_log "Setup complete. Your vault is at $qvault. The personal overlay:"
+  fv_log "Setup complete. Your vault is at $qvault."
   fv_log ""
-  fv_log "  - personal/identity.md, tasks.md  (your context)"
-  fv_log "  - CLAUDE.md  (what the AI reads at session start; skip-worktree is set so it stays local)"
-  fv_log "  - drafts/  (your scratch folder)"
+  fv_log "  - personal/identity.md, tasks.md  — who you are and what's on your plate"
+  fv_log "  - CLAUDE.md                       — what the AI reads at session start"
+  fv_log "  - drafts/                         — scratch folder for half-formed notes"
   fv_log ""
-  fv_log "personal/, drafts/ are gitignored. CLAUDE.md is local-only via git skip-worktree."
+  fv_log "Everything in personal/, drafts/, and CLAUDE.md stays on your machine — it isn't shared with the team."
   fv_log ""
   fv_log "Next: open Claude Code at $qvault (run: cd $qvault && claude, or open the folder"
   fv_log "in your IDE if it has the integration). The AI will load your Flash context"
@@ -640,5 +757,5 @@ fv_success() {
   fv_log "Try: ask 'what's the current state of [[product/lines/$primary_line]]?' — the AI"
   fv_log "should ground its answer in real vault content and cite the files it read."
   fv_log ""
-  fv_log "If anything looks wrong, edit the files in personal/ directly. They're yours, not synced."
+  fv_log "If anything looks wrong, edit the files in personal/ directly."
 }

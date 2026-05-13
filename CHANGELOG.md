@@ -6,6 +6,23 @@ Versioning note: pre-0.1.1 commits in this repo were internally labeled `0.2.0`
 (inherited from the vault's old manifest) but were never published. `0.1.1` is
 the first real release.
 
+## [0.1.2] - 2026-05-13
+
+### Added
+- **Person stub creation.** New `fv_slugify` helper and `fv_create_person_if_missing` function. During `fv_generate`, the lib derives a slug from `FV_NAME` and renders `company/people/<slug>.md` from `templates/person-template.md` (filled with role, team, squads) if no file exists at that path. Identity.md now links to the contributor's profile via `[[company/people/<slug>]]`. The file is left untracked locally so the user ships it via `/push-to-flash-vault` when ready.
+- **Project draft stubs.** New `fv_drop_missing_project_drafts` function. For each slug the model passes in `FV_PROJECTS_MENTIONED`, the lib drops `drafts/project-<slug>.md` if no `product/projects/<slug>.md` exists and no draft with the same name is pending. The user runs `/process` later to file each one with the proper project schema (avoids polluting `product/projects/` with TBD-laden stubs we can't fully fill from a single setup mention).
+- **Work-style field.** New env var `FV_WORK_STYLE`. Setup asks the user how they like to work during Turn 2; the answer renders into `personal/identity.md` under "How I think about work" (replacing the prior hardcoded session-rhythm text that duplicated CLAUDE.md's procedural section). Empty values render a prompt line for the user to fill in later.
+
+### Changed
+- **Setup is now a two-turn conversation.** Turn 1 collects identity (name, role, lines, squads); Turn 2 collects focus + work style + project mentions. The skill no longer collapses to a single turn even if the user volunteers everything up front — Turn 2 surfaces work-style preferences and project mentions that would otherwise be missed. Required-field re-asks (Part 3.2) still add sub-turns when name, role, or lines are missing.
+- **User-facing copy de-jargoned.** Removed "dev-mode CLAUDE.md", "skip-worktree", "overwrite", and most "gitignored" mentions from `fv_check_existing_path`, `fv_success`, and the SKILL.md welcome, Phase 1, Phase 2 Part 1, and Part 5 strings. The user now sees one consistent line: "Your files in `personal/`, `drafts/`, and `CLAUDE.md` stay on your machine — they aren't shared with the team." The underlying plumbing still happens (skip-worktree is still set, `.git/info/exclude` is still updated, gitignored paths are still gitignored) — it just isn't surfaced to non-technical contributors.
+- **Part 3 confirmation expanded** to list the work-style answer, the auto-created profile note, and any project draft stubs that will be dropped.
+- **`fv_generate` order updated** to write the person stub and project drafts before tasks.md / CLAUDE.md / identity.md — keeps identity.md (the atomic-flag write) last.
+
+### Notes
+- Requires Flash-Vault `0.8.1`+ for `{{PERSON_SLUG}}` and `{{WORK_STYLE}}` placeholders in `templates/personal/identity-template.md`. Older vault clones will leave those placeholders unrendered.
+- Test harness (`test/setup.sh`) does not yet cover the new functions, the two-turn flow, or the new env vars. Tests need updating before this version is published.
+
 ## [0.1.1] - 2026-05-13
 
 ### Removed
