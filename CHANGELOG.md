@@ -6,6 +6,25 @@ Versioning note: pre-0.1.1 commits in this repo were internally labeled `0.2.0`
 (inherited from the vault's old manifest) but were never published. `0.1.1` is
 the first real release.
 
+## [0.1.3] - 2026-05-13
+
+### Added
+- **Test coverage for v0.1.2 work** ([#3](https://github.com/Flashie-AI/flash-plugins/pull/3)). Seven new scenarios close the coverage gap flagged in the prior changelog:
+  - `24` — `fv_slugify` handles whitespace, casing, non-alphanumeric runs.
+  - `25` — `fv_create_person_if_missing` renders a stub from the person template with correct frontmatter and strips the `_schema:` block.
+  - `26` — `fv_create_person_if_missing` is overwrite-safe (preserves an existing file).
+  - `27` — `fv_drop_missing_project_drafts` creates a draft only for slugs that lack both a real note AND a pending draft.
+  - `28` — identity.md gets a `Profile: [[company/people/<slug>]]` link and the matching person stub is created.
+  - `29` — `FV_WORK_STYLE` prose renders into identity.md verbatim; no session-rhythm leakage.
+  - `30` — empty `FV_WORK_STYLE` renders the editable prompt line; no unrendered `{{WORK_STYLE}}` placeholder remains.
+
+### Fixed
+- **Three pre-existing scenarios updated** to match the v0.1.2 de-jargoned copy: `02-refuse-full-setup`, `03-refuse-partial-setup`, `07-atomic-flag-recovery` now grep for the new strings (`"already have a Flash Vault set up"`, `"personal setup didn't finish"`).
+- **Test fixture re-synced to Flash-Vault@0.8.1** templates (`test/fixtures/source-repo/templates/personal/identity-template.md`, `claude-template.md`). Added the previously-missing `templates/person-template.md` to the fixture — `fv_create_person_if_missing` requires it.
+
+### Notes
+- Tests + fixtures only. No lib changes, no SKILL.md changes, no schema changes. `test/setup.sh` now 30/30 (was 20/23, the 3 fails were wording-mismatches from v0.1.2).
+
 ## [0.1.2] - 2026-05-13
 
 ### Added
