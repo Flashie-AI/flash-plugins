@@ -609,6 +609,8 @@ fv_current_goals_step_num() {
 #   FV_WORK_STYLE (optional; how the user likes to work — fills identity.md
 #                  "How I think about work")
 #   FV_TEAM (optional; defaults to "product")
+#   FV_PERSON_SLUG (optional; overrides the name-derived person slug so identity.md
+#                  links to a confirmed existing profile)
 #   FV_SQUADS (optional, space-separated squad slugs)
 #   FV_PROJECTS_MENTIONED (optional, space-separated project slugs the user
 #                  named during setup; missing ones get draft stubs in drafts/)
@@ -640,8 +642,10 @@ fv_generate() {
   local focus_links
   focus_links=$(fv_build_focus_links "$FV_FOCUS")
 
+  # FV_PERSON_SLUG (optional) — set by the skill when the contributor confirmed an
+  # existing near-match profile; links identity.md to that file instead of a new one.
   local person_slug
-  person_slug=$(fv_slugify "$FV_NAME")
+  person_slug="${FV_PERSON_SLUG:-$(fv_slugify "$FV_NAME")}"
 
   local work_style_rendered
   if [ -n "$FV_WORK_STYLE" ]; then

@@ -720,6 +720,32 @@ test_30_identity_work_style_empty_renders_prompt() {
   return 0
 }
 
+# Scenario 31: FV_PERSON_SLUG overrides the name-derived person slug so identity
+# links to a confirmed existing profile instead of a fresh duplicate.
+test_31_person_slug_override() {
+  fv_clone "$VAULT" 2>/dev/null
+  cd "$VAULT" || return 1
+  fv_verify_clone
+
+  # An existing profile the contributor should be linked to.
+  mkdir -p company/people
+  printf -- '---\ntype: person\n---\n# Tarek Rajab\n' > company/people/tarek-rajab.md
+
+  export FV_NAME="Tarek Q Rajab" FV_ROLE="Product Designer" \
+         FV_LINES="financial-wellness" FV_PRIMARY_LINE="financial-wellness" \
+         FV_FOCUS="" FV_PERSONALITY="" FV_PERSON_SLUG="tarek-rajab"
+  fv_generate || { unset FV_PERSON_SLUG; return 1; }
+  unset FV_PERSON_SLUG
+
+  # identity.md links to the existing profile slug
+  assert_grep "company/people/tarek-rajab" "$VAULT/personal/identity.md" || return 1
+  # the existing profile file was NOT overwritten
+  assert_grep "# Tarek Rajab" "$VAULT/company/people/tarek-rajab.md" || return 1
+  # slugify did NOT win: no file was created at the slugified-name path
+  assert_file_absent "$VAULT/company/people/tarek-q-rajab.md" || return 1
+  return 0
+}
+
 # =============================================================================
 # Run all scenarios
 # =============================================================================
@@ -754,6 +780,7 @@ run_scenario "27-drop-missing-project-drafts"    test_27_drop_missing_project_dr
 run_scenario "28-identity-has-profile-link"      test_28_identity_has_profile_link
 run_scenario "29-identity-work-style-filled"     test_29_identity_work_style_filled
 run_scenario "30-identity-work-style-empty"      test_30_identity_work_style_empty_renders_prompt
+run_scenario "31-person-slug-override"           test_31_person_slug_override
 
 # =============================================================================
 # Summary
