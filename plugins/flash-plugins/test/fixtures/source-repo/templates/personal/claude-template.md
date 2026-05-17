@@ -24,15 +24,15 @@ Everything else — `product/lines/`, `product/projects/`, `product/metrics/`, `
 
 ## Daily commands
 
-These are the skills {{NAME}} runs most. All namespaced under `/flash-vault:`.
+These are the skills {{NAME}} runs most.
 
 | Command | When to run |
 |---|---|
-| `/flash-vault:process <draft>` | After dropping a file in `drafts/` and {{NAME}} wants it filed into the vault |
-| `/flash-vault:process` (no arg) | Process every pending draft in batch (oldest first) |
-| `/flash-vault:validate <note>` | Check a specific note against its template's schema, links, and indexes |
-| `/flash-vault:validate all` | Audit the whole vault — staleness scan, orphan check, link health |
-| `/flash-vault:push-to-flash-vault` | Branch + commit + open a PR with {{NAME}}'s changes; assigns tinqr as reviewer |
+| `/process <draft>` | After dropping a file in `drafts/` and {{NAME}} wants it filed into the vault |
+| `/process` (no arg) | Process every pending draft in batch (oldest first) |
+| `/validate <note>` | Check a specific note against its template's schema, links, and indexes |
+| `/validate all` | Audit the whole vault — staleness scan, orphan check, link health |
+| `/push-to-flash-vault` | Branch + commit + open a PR with {{NAME}}'s changes; assigns tinqr as reviewer |
 
 Any pending TBDs in {{NAME}}'s owned areas appear in `personal/tasks.md` automatically — no command needed to surface them. They show in the orient summary above.
 
@@ -71,8 +71,8 @@ See `CONTRIBUTING.md` for full conventions: kebab-case slugs, slug namespace rul
 
 | Content type | Goes to |
 |---|---|
-| New note (project, persona, metric, person, etc.) | `<area>/<type>/<slug>.md` from matching template (or run `/flash-vault:process` on a draft) |
-| Half-formed thought | `drafts/` (stays on your machine, processed later via `/flash-vault:process`) |
+| New note (project, persona, metric, person, etc.) | `<area>/<type>/<slug>.md` from matching template (or run `/process` on a draft) |
+| Half-formed thought | `drafts/` (stays on your machine, processed later via `/process`) |
 | {{NAME}}'s focus shift | `personal/identity.md` "What I'm focused on now" |
 | {{NAME}}'s task or next action | `personal/tasks.md` (manual sections — In progress / Queue) |
 | {{NAME}}'s tone preference change | `personal/identity.md` "How I prefer the AI to talk to me" |
@@ -83,4 +83,4 @@ Do not write directly under `company/` or `product/` without grounding in an exi
 
 ## Drafts
 
-`drafts/` is {{NAME}}'s scratch zone. Half-formed notes, captures, things in progress. Not synced. When something in `drafts/` is ready, run `/flash-vault:process` on it — the skill files it into the right typed folder under `company/` or `product/`, archives the draft, and validates the new note.
+`drafts/` is {{NAME}}'s scratch zone. Half-formed notes, captures, things in progress. Not synced. When something in `drafts/` is ready, run `/process` on it — the skill files it into the right typed folder under `company/` or `product/`, archives the draft, and validates the new note.

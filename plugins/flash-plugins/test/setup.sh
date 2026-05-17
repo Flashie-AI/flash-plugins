@@ -586,9 +586,9 @@ test_23_claude_md_has_daily_commands() {
 
   local claude="$VAULT/CLAUDE.md"
   assert_grep "Daily commands" "$claude" || return 1
-  assert_grep "/flash-vault:process" "$claude" || return 1
-  assert_grep "/flash-vault:validate" "$claude" || return 1
-  assert_grep "/flash-vault:push-to-flash-vault" "$claude" || return 1
+  assert_grep "/process" "$claude" || return 1
+  assert_grep "/validate" "$claude" || return 1
+  assert_grep "/push-to-flash-vault" "$claude" || return 1
 
   # Orient should mention 3 reads, not the old 7
   assert_grep "personal/identity.md" "$claude" || return 1

@@ -3,7 +3,7 @@ name: setup
 description: One-time setup for Flash Vault. Clones the vault to a path you choose, then generates your personal files and a per-contributor CLAUDE.md so the AI loads Flash context calibrated to your role and product lines. Runs a two-turn conversation to collect your name, role, product line(s), squad(s), current focus, and work-style preferences — no git email inference.
 ---
 
-# /flash-vault:setup
+# /setup
 
 This skill runs ONCE per local clone of Flash Vault. It sets up your personal space — files under `personal/`, a personalised `CLAUDE.md` at the vault root, and a `drafts/` scratch folder. All of these stay on your machine and aren't shared with the team.
 
