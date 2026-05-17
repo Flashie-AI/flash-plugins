@@ -122,6 +122,39 @@ FV_SQUADS="..."        # may be empty
 FV_PERSONALITY="..."   # may be empty; refined again after Turn 2
 ```
 
+### Part 2a.1: Near-match profile check
+
+After storing the Turn 1 variables, check whether the contributor's name matches
+someone who already has a profile. List the existing people:
+
+```bash
+ls company/people/*.md 2>/dev/null
+```
+
+Each filename without `.md` is a person's slug; that file's first `# ` heading is
+their display name. Using your own judgment, decide whether `FV_NAME` is the same
+person as any existing profile — allow for typos, nicknames, name-order
+differences, and spelling or transliteration variants, not just exact matches.
+
+Default `FV_PERSON_SLUG=""`. If you find a likely match, ask the contributor —
+plain language, one question — before continuing to Turn 2:
+
+> I found an existing profile that looks like you — **<display name>**. Is that
+> you, or should I set up a new one?
+
+- If they confirm it is them: set `FV_PERSON_SLUG` to that profile's slug (its
+  filename without `.md`), and set `FV_NAME` to that profile's display name (they
+  may have typed a typo of their own name).
+- If they say it is someone else / a new person: leave `FV_PERSON_SLUG` empty.
+- If several profiles are plausible: list the display names, let them pick one or
+  say none.
+
+Store:
+
+```bash
+FV_PERSON_SLUG="..."   # the matched slug, or empty if no match was confirmed
+```
+
 ### Part 2b: Turn 2 — focus + work style
 
 Print exactly:
@@ -162,7 +195,7 @@ This skill MUST know who the contributor is and which product line(s) they work 
 > - **What you're focused on now:** ${FV_FOCUS:-(blank — you can fill it in later)}
 > - **Work style:** ${FV_WORK_STYLE:-(blank — you can fill it in later)}
 > - **Your personal files:** `personal/identity.md`, `personal/tasks.md`, your `CLAUDE.md`, and a `drafts/` scratch folder — all stay on your machine
-> - **A profile note** for you under `company/people/` if one doesn't already exist
+> - **Your profile:** if you confirmed an existing profile above, I'll link your personal files to it; otherwise I'll create a new profile note for you under `company/people/`
 > - **Draft stubs** in `drafts/` for any projects you mentioned that don't have a vault note yet — run `/process` on them later to file them properly
 >
 > Anything wrong? Otherwise: ready to generate?
@@ -185,7 +218,7 @@ If the user says "ready", "go ahead", "just do it", or similar while any of `FV_
 ### Part 4: Generate (deterministic — no model decisions)
 
 ```bash
-export FV_NAME FV_ROLE FV_LINES FV_PRIMARY_LINE FV_SQUADS
+export FV_NAME FV_ROLE FV_LINES FV_PRIMARY_LINE FV_SQUADS FV_PERSON_SLUG
 export FV_FOCUS FV_WORK_STYLE FV_PERSONALITY FV_PROJECTS_MENTIONED
 fv_generate
 ```
