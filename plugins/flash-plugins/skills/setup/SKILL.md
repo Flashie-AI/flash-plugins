@@ -226,7 +226,7 @@ fv_generate
 The lib handles atomic generation in this order (identity.md is the last-write atomic flag):
 
 1. `mkdir -p personal drafts; touch drafts/.gitkeep`
-2. **Starter profile** — if `company/people/<slug>.md` doesn't exist for the user (slug derived from `FV_NAME` via `fv_slugify`), render a starter profile from `templates/person-template.md` with role/team/squads filled in. The file is untracked locally; the user ships it via `/push-to-flash-vault` when ready.
+2. **Starter profile** — if `company/people/<slug>.md` doesn't exist for the user (slug from `FV_PERSON_SLUG` if a near-match was confirmed, otherwise derived from `FV_NAME` via `fv_slugify`), render a starter profile from `templates/person-template.md` with role/team/squads filled in. The file is untracked locally; the user ships it via `/push-to-flash-vault` when ready.
 3. **Project draft notes** — for each slug in `FV_PROJECTS_MENTIONED`, if `product/projects/<slug>.md` is missing AND no `drafts/project-<slug>.md` is pending, drop a one-line draft note for `/process` to file later.
 4. `personal/tasks.md` (rendered from `templates/tasks-template.md`, `_schema:` block stripped, includes the `<!-- flash-vault:auto-managed:start -->` / `:end` markers used by `tbd-core.sh::fv_tbds_upsert`)
 5. `CLAUDE.md` at repo root — the user-mode brief rendered from `templates/personal/claude-template.md`. The lib runs `git update-index --skip-worktree CLAUDE.md` and appends `/CLAUDE.md` to `.git/info/exclude` so the user's local brief stays on their machine and isn't fought by `git pull`. (These are implementation details — don't surface them to the user.)
