@@ -586,9 +586,9 @@ test_23_claude_md_has_daily_commands() {
 
   local claude="$VAULT/CLAUDE.md"
   assert_grep "Daily commands" "$claude" || return 1
-  assert_grep "/flash-vault:process" "$claude" || return 1
-  assert_grep "/flash-vault:validate" "$claude" || return 1
-  assert_grep "/flash-vault:push-to-flash-vault" "$claude" || return 1
+  assert_grep "/process" "$claude" || return 1
+  assert_grep "/validate" "$claude" || return 1
+  assert_grep "/push-to-flash-vault" "$claude" || return 1
 
   # Orient should mention 3 reads, not the old 7
   assert_grep "personal/identity.md" "$claude" || return 1
@@ -620,7 +620,7 @@ test_24_slugify() {
   return 0
 }
 
-# Scenario 25: fv_create_person_if_missing renders a stub from the template
+# Scenario 25: fv_create_person_if_missing renders a starter profile from the template
 test_25_create_person_if_missing_creates() {
   fv_clone "$VAULT"
   cd "$VAULT" || return 1
@@ -689,7 +689,7 @@ test_28_identity_has_profile_link() {
 
   assert_grep "Profile: \[\[company/people/tarek-rajab\]\]" "$VAULT/personal/identity.md" \
     || { echo "  FAIL: identity.md missing Profile link"; return 1; }
-  # And the matching person stub should have been created
+  # And the matching starter profile should have been created
   assert_file_exists "$VAULT/company/people/tarek-rajab.md" || return 1
   return 0
 }
@@ -717,6 +717,32 @@ test_30_identity_work_style_empty_renders_prompt() {
     || { echo "  FAIL: empty work-style should render a prompt line"; return 1; }
   # No unrendered placeholder should remain in the file
   assert_no_grep "{{WORK_STYLE}}" "$VAULT/personal/identity.md" || return 1
+  return 0
+}
+
+# Scenario 31: FV_PERSON_SLUG overrides the name-derived person slug so identity
+# links to a confirmed existing profile instead of a fresh duplicate.
+test_31_person_slug_override() {
+  fv_clone "$VAULT" 2>/dev/null
+  cd "$VAULT" || return 1
+  fv_verify_clone
+
+  # An existing profile the contributor should be linked to.
+  mkdir -p company/people
+  printf -- '---\ntype: person\n---\n# Tarek Rajab\n' > company/people/tarek-rajab.md
+
+  export FV_NAME="Tarek Q Rajab" FV_ROLE="Product Designer" \
+         FV_LINES="financial-wellness" FV_PRIMARY_LINE="financial-wellness" \
+         FV_FOCUS="" FV_PERSONALITY="" FV_PERSON_SLUG="tarek-rajab"
+  fv_generate || { unset FV_PERSON_SLUG; return 1; }
+  unset FV_PERSON_SLUG
+
+  # identity.md links to the existing profile slug
+  assert_grep "company/people/tarek-rajab" "$VAULT/personal/identity.md" || return 1
+  # the existing profile file was NOT overwritten
+  assert_grep "# Tarek Rajab" "$VAULT/company/people/tarek-rajab.md" || return 1
+  # slugify did NOT win: no file was created at the slugified-name path
+  assert_file_absent "$VAULT/company/people/tarek-q-rajab.md" || return 1
   return 0
 }
 
@@ -754,6 +780,7 @@ run_scenario "27-drop-missing-project-drafts"    test_27_drop_missing_project_dr
 run_scenario "28-identity-has-profile-link"      test_28_identity_has_profile_link
 run_scenario "29-identity-work-style-filled"     test_29_identity_work_style_filled
 run_scenario "30-identity-work-style-empty"      test_30_identity_work_style_empty_renders_prompt
+run_scenario "31-person-slug-override"           test_31_person_slug_override
 
 # =============================================================================
 # Summary
