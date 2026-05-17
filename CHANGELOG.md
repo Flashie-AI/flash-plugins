@@ -6,6 +6,14 @@ Versioning note: pre-0.1.1 commits in this repo were internally labeled `0.2.0`
 (inherited from the vault's old manifest) but were never published. `0.1.1` is
 the first real release.
 
+## [0.1.4] - 2026-05-17
+
+### Added
+- **Near-match profile detection in `/setup`.** After the contributor gives their name, the setup skill has Claude read existing `company/people/` profiles and, on a close match (a typo, nickname, or transliteration variant — e.g. "Ragab" vs an existing "Rajab"), ask the contributor to confirm before creating a duplicate profile. New `FV_PERSON_SLUG` override makes `fv_generate` link `identity.md` to the confirmed existing profile.
+
+### Changed
+- **User-facing copy is plain language.** "stub" is now "draft note" / "starter profile"; the setup skill's voice rule keeps internal jargon out of what the contributor sees. Skill references are bare (`/setup`, not `/flash-vault:setup`).
+
 ## [0.1.3] - 2026-05-13
 
 ### Added
