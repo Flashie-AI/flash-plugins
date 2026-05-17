@@ -360,7 +360,7 @@ fv_slugify() {
     | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g'
 }
 
-# Render a stub `company/people/<slug>.md` from the person template if no file
+# Render a starter profile `company/people/<slug>.md` from the person template if no file
 # at that path already exists. The file is untracked-by-default in the user's
 # clone (it lives under the tracked `company/people/` directory, so it shows up
 # as untracked until the user ships it via /push-to-flash-vault).
@@ -416,7 +416,7 @@ fv_create_person_if_missing() {
   ' templates/person-template.md > "$dest"
 }
 
-# For each project slug the user mentioned during setup, drop a stub draft into
+# For each project slug the user mentioned during setup, drop a draft note into
 # `drafts/project-<slug>.md` IF no real project note exists yet AND no draft
 # with the same name is already pending. The user runs `/process` later to
 # turn these into proper `product/projects/<slug>.md` notes.
@@ -613,7 +613,7 @@ fv_current_goals_step_num() {
 #                  links to a confirmed existing profile)
 #   FV_SQUADS (optional, space-separated squad slugs)
 #   FV_PROJECTS_MENTIONED (optional, space-separated project slugs the user
-#                  named during setup; missing ones get draft stubs in drafts/)
+#                  named during setup; missing ones get draft notes in drafts/)
 fv_generate() {
   local today
   today=$(date +%Y-%m-%d)
@@ -658,12 +658,12 @@ fv_generate() {
   mkdir -p personal drafts
   touch drafts/.gitkeep
 
-  # 1a. Person stub in company/people/ if missing — gives identity.md a valid
+  # 1a. Starter profile in company/people/ if missing — gives identity.md a valid
   # `[[company/people/<slug>]]` link target. File is untracked locally; user
   # ships it via /push-to-flash-vault when ready.
   fv_create_person_if_missing "$person_slug" "$FV_NAME" "$FV_ROLE" "${FV_TEAM:-product}" "$FV_SQUADS"
 
-  # 1b. Drop draft stubs for any projects the user mentioned that don't yet
+  # 1b. Drop draft notes for any projects the user mentioned that don't yet
   # exist in product/projects/. The user runs /process later to file each one.
   fv_drop_missing_project_drafts "$FV_PROJECTS_MENTIONED"
 

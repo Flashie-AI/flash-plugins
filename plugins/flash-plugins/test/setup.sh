@@ -620,7 +620,7 @@ test_24_slugify() {
   return 0
 }
 
-# Scenario 25: fv_create_person_if_missing renders a stub from the template
+# Scenario 25: fv_create_person_if_missing renders a starter profile from the template
 test_25_create_person_if_missing_creates() {
   fv_clone "$VAULT"
   cd "$VAULT" || return 1
@@ -689,7 +689,7 @@ test_28_identity_has_profile_link() {
 
   assert_grep "Profile: \[\[company/people/tarek-rajab\]\]" "$VAULT/personal/identity.md" \
     || { echo "  FAIL: identity.md missing Profile link"; return 1; }
-  # And the matching person stub should have been created
+  # And the matching starter profile should have been created
   assert_file_exists "$VAULT/company/people/tarek-rajab.md" || return 1
   return 0
 }

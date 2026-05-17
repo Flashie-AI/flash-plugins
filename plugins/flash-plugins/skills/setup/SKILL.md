@@ -168,7 +168,7 @@ Then **wait** for the user's response. After it lands, extract:
 | Signal | What to extract | Notes |
 |---|---|---|
 | Current focus | Project / goal / theme they mentioned | Goes into `personal/identity.md` "What I'm focused on now". May remain empty. |
-| Projects mentioned | Slug-like project names | Validate against `product/projects/*.md`. Missing ones become draft stubs (see Part 4). |
+| Projects mentioned | Slug-like project names | Validate against `product/projects/*.md`. Missing ones become draft notes (see Part 4). |
 | Work style | How they like to work — pace, comms cadence, what to push back on, anything else | Goes into `personal/identity.md` "How I think about work". May remain empty (a prompt line is left in its place). |
 | Personality / tone (refine) | Continue from Turn 1 | Final shape goes into "How I prefer the AI to talk to me". |
 
@@ -196,7 +196,7 @@ This skill MUST know who the contributor is and which product line(s) they work 
 > - **Work style:** ${FV_WORK_STYLE:-(blank — you can fill it in later)}
 > - **Your personal files:** `personal/identity.md`, `personal/tasks.md`, your `CLAUDE.md`, and a `drafts/` scratch folder — all stay on your machine
 > - **Your profile:** if you confirmed an existing profile above, I'll link your personal files to it; otherwise I'll create a new profile note for you under `company/people/`
-> - **Draft stubs** in `drafts/` for any projects you mentioned that don't have a vault note yet — run `/process` on them later to file them properly
+> - **Draft notes** in `drafts/` for any projects you mentioned that don't have a vault note yet — run `/process` on them later to file them properly
 >
 > Anything wrong? Otherwise: ready to generate?
 
@@ -226,8 +226,8 @@ fv_generate
 The lib handles atomic generation in this order (identity.md is the last-write atomic flag):
 
 1. `mkdir -p personal drafts; touch drafts/.gitkeep`
-2. **Person stub** — if `company/people/<slug>.md` doesn't exist for the user (slug derived from `FV_NAME` via `fv_slugify`), render a stub from `templates/person-template.md` with role/team/squads filled in. The file is untracked locally; the user ships it via `/push-to-flash-vault` when ready.
-3. **Project draft stubs** — for each slug in `FV_PROJECTS_MENTIONED`, if `product/projects/<slug>.md` is missing AND no `drafts/project-<slug>.md` is pending, drop a one-line stub draft for `/process` to file later.
+2. **Starter profile** — if `company/people/<slug>.md` doesn't exist for the user (slug derived from `FV_NAME` via `fv_slugify`), render a starter profile from `templates/person-template.md` with role/team/squads filled in. The file is untracked locally; the user ships it via `/push-to-flash-vault` when ready.
+3. **Project draft notes** — for each slug in `FV_PROJECTS_MENTIONED`, if `product/projects/<slug>.md` is missing AND no `drafts/project-<slug>.md` is pending, drop a one-line draft note for `/process` to file later.
 4. `personal/tasks.md` (rendered from `templates/tasks-template.md`, `_schema:` block stripped, includes the `<!-- flash-vault:auto-managed:start -->` / `:end` markers used by `tbd-core.sh::fv_tbds_upsert`)
 5. `CLAUDE.md` at repo root — the user-mode brief rendered from `templates/personal/claude-template.md`. The lib runs `git update-index --skip-worktree CLAUDE.md` and appends `/CLAUDE.md` to `.git/info/exclude` so the user's local brief stays on their machine and isn't fought by `git pull`. (These are implementation details — don't surface them to the user.)
 6. `personal/identity.md` (LAST — atomic flag) — Who I am (with `[[company/people/<slug>]]` profile link) / What I'm focused on now / How I prefer the AI to talk to me / How I think about work (filled from `FV_WORK_STYLE`, or a prompt line if empty). Frontmatter includes `product_lines:` and `squads:` arrays consumed by `tbd-core.sh::fv_tbds_owned_paths`.
@@ -248,11 +248,11 @@ Prints the final message with concrete paths and a suggested first question to v
 
 - **Never invent line slugs.** The canonical list comes from `product/lines/*.md` in the cloned repo — read it at runtime via `fv_list_canonical_lines`. If a user names something not in that list (e.g. "security team"), record it in identity but DO NOT add to the lines list — fictional lines break the orient sequence. Re-ask with the canonical list shown.
 - **Never invent squad slugs.** The canonical list comes from `product/squads/*.md` — read it via `fv_list_canonical_squads`. If the user names a squad not in that list, re-ask with the canonical list shown, or accept an empty value if they choose to skip. Fictional squad slugs produce broken wiki links in `personal/identity.md`.
-- **Always run both turns.** Turn 1 collects identity; Turn 2 collects focus + work style. Do not collapse to a single turn even if the user volunteers everything up front — Turn 2 lets the user think about work style separately and surfaces project mentions that need stub drafts.
-- **Project slugs you pull from Turn 2 must be kebab-case.** Pass them in `FV_PROJECTS_MENTIONED` (space-separated). The lib decides which need stub drafts based on what already exists in `product/projects/` and `drafts/`.
+- **Always run both turns.** Turn 1 collects identity; Turn 2 collects focus + work style. Do not collapse to a single turn even if the user volunteers everything up front — Turn 2 lets the user think about work style separately and surfaces project mentions that need draft notes.
+- **Project slugs you pull from Turn 2 must be kebab-case.** Pass them in `FV_PROJECTS_MENTIONED` (space-separated). The lib decides which need draft notes based on what already exists in `product/projects/` and `drafts/`.
 - **Never default required fields.** Name, role, and product line(s) are required. Impatience signals don't waive them. Focus and work style may legitimately be left empty.
 - **Never bump VERSION or edit CHANGELOG.md.** Those are developer-mode actions.
-- **Never commit anything.** Personal files stay local; the person stub under `company/people/` and any project drafts under `drafts/` are left untracked for the user to ship later via `/push-to-flash-vault`.
+- **Never commit anything.** Personal files stay local; the starter profile under `company/people/` and any project drafts under `drafts/` are left untracked for the user to ship later via `/push-to-flash-vault`.
 - **Don't surface plumbing.** Phrases like "skip-worktree", "gitignored", "overwrite dev-mode CLAUDE.md" are internals — keep them out of user-facing text. The user only needs to know their personal files stay on their machine.
 - **Propagate Bash failures.** If a step exits non-zero, surface it. Don't soft-recover.
 - **The conversation lives in YOUR voice.** The lib handles deterministic state; you handle the language. Read `personal/identity.md` after generation completes if you want to immediately match the contributor's tone preferences for the success message.
